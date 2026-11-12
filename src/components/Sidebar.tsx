@@ -21,10 +21,14 @@ export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 text-slate-950 shadow-md shadow-sky-500/20">
           <Ticket className="h-5 w-5" />
         </div>
-        <p className="text-[11px] font-bold text-white leading-tight mt-1 flex items-center justify-center gap-1">
-  <span>Soi Cầu 3 Miền</span>
-  <span className="text-sky-400 text-xs font-black bg-sky-400/20 px-1 py-0.5 rounded border border-sky-400/40">AI</span>
-</p>
+        <div className="flex flex-col items-center gap-1 mt-1">
+  <span className="text-amber-300 text-xs font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-md border border-amber-400/50 shadow-md">
+    AI
+  </span>
+  <span className="text-[10px] font-bold text-slate-100 leading-tight">
+    Soi Cầu 3 Miền
+  </span>
+</div>
       </div>
 
       {/* Cột nút 3 Miền dạng thẻ dọc chuẩn v3 */}
