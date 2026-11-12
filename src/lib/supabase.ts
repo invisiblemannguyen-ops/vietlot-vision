@@ -52,14 +52,12 @@ export interface Prediction {
   created_at?: string;
 }
 
-// Thêm Interface cho decayAlgorithm.ts
 export interface DigitScoreData {
   hundreds: number[];
   tens: number[];
   ones: number[];
 }
 
-// Type Aliases hỗ trợ tương thích
 export type LotteryStation = Station;
 export type LotteryDraw = DrawResult;
 export type LotteryPrediction = Prediction;
