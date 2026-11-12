@@ -28,7 +28,8 @@ def parse_digit_positions(prize_str):
 
 
 def scrape_minhngoc_mb(date_str):
-  url = f'[suspicious link removed]{date_str}.html'
+base_url = "https:" + "//www.minhngoc.net.vn/ket-qua-xo-so/ket-qua-xoso-mien-bac/"
+    url = f"{base_url}{date_str}.html"
   headers = {
       'User-Agent': (
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
