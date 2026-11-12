@@ -1,5 +1,4 @@
-import { Ticket } from "lucide-react";
-import { REGION_LABELS } from "@/lib/constants";
+import { Ticket, MapPin } from "lucide-react";
 
 export type RegionId = "MB" | "MT" | "MN";
 
@@ -9,47 +8,51 @@ interface SidebarProps {
 }
 
 export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
-  const regions: RegionId[] = ["MB", "MT", "MN"];
+  const regions: { id: RegionId; label: string }[] = [
+    { id: "MB", label: "XỔ SỐ MIỀN BẮC" },
+    { id: "MT", label: "XỔ SỐ MIỀN TRUNG" },
+    { id: "MN", label: "XỔ SỐ MIỀN NAM" },
+  ];
 
   return (
-    <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-white/5 bg-ink-900/90 backdrop-blur-xl">
-      {/* Header tối giản */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5">
+    <aside className="w-24 sm:w-28 md:w-32 shrink-0 h-full border-r border-white/10 bg-ink-900/95 backdrop-blur-xl flex flex-col p-2 sm:p-3 overflow-y-auto">
+      {/* Top Header Logo */}
+      <div className="flex flex-col items-center gap-1 py-2 mb-3 border-b border-white/5 text-center">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 text-slate-950 shadow-md shadow-sky-500/20">
           <Ticket className="h-5 w-5" />
         </div>
-        <div>
-          <p className="text-sm font-bold text-white">Vietlot Vision</p>
-          <p className="text-[11px] text-slate-400">Dự Đoán Xổ Số 3 Miền</p>
-        </div>
+        <p className="text-[10px] font-bold text-white leading-tight mt-1">Vietlot</p>
       </div>
 
-      {/* Menu dọc 3 Miền */}
-      <div className="p-3">
-        <p className="px-2 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          Danh Mục Miền
-        </p>
-        <div className="flex md:flex-col gap-1.5 mt-1 overflow-x-auto">
-          {regions.map((reg) => {
-            const isActive = selectedRegion === reg;
-            return (
-              <button
-                key={reg}
-                onClick={() => onSelectRegion(reg)}
-                className={`flex-1 md:flex-initial flex items-center justify-between rounded-xl px-4 py-3 text-sm font-bold transition-all ${
+      {/* Cột nút 3 Miền dạng thẻ dọc chuẩn v3 */}
+      <div className="flex flex-col gap-2.5 flex-1">
+        {regions.map((reg) => {
+          const isActive = selectedRegion === reg.id;
+          return (
+            <button
+              key={reg.id}
+              onClick={() => onSelectRegion(reg.id)}
+              className={`flex flex-col items-center justify-center gap-2 rounded-2xl p-2.5 transition-all text-center border ${
+                isActive
+                  ? "bg-gradient-to-b from-sky-500/30 to-cyan-500/15 border-sky-400 text-sky-300 shadow-md shadow-sky-500/20"
+                  : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+              }`}
+            >
+              <div
+                className={`flex h-9 w-9 items-center justify-center rounded-xl ${
                   isActive
-                    ? "bg-gradient-to-r from-sky-500/25 to-cyan-500/15 text-sky-300 border-l-4 border-sky-400 shadow-md"
-                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200 border-l-4 border-transparent"
+                    ? "bg-sky-400 text-slate-950 font-bold"
+                    : "bg-white/10 text-slate-300"
                 }`}
               >
-                <span>XỔ SỐ {REGION_LABELS[reg] || reg}</span>
-                {isActive && (
-                  <span className="hidden md:inline-block h-2 w-2 rounded-full bg-sky-400 pulse-ring" />
-                )}
-              </button>
-            );
-          })}
-        </div>
+                <MapPin className="h-4.5 w-4.5" />
+              </div>
+              <span className="text-[10px] sm:text-[11px] font-bold leading-tight">
+                {reg.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </aside>
   );
