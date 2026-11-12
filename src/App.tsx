@@ -92,7 +92,10 @@ function App() {
         {/* Header trên */}
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-white">Vietlot Vision</span>
+            <div className="flex items-center gap-1.5">
+  <span className="font-bold text-sm text-white">Soi Cầu 3 Miền</span>
+  <span className="text-sky-400 text-base font-black bg-sky-400/20 px-1.5 py-0.5 rounded-lg border border-sky-400/40 shadow-sm shadow-sky-500/30">AI</span>
+</div>
             <span className="text-xs text-sky-400 font-semibold">
               [{REGION_LABELS[selectedRegion] || selectedRegion}]
             </span>
