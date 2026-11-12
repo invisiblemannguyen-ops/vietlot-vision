@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import type { LotteryStation } from "@/lib/supabase";
+import type { Station, DrawResult } from "@/lib/supabase";
 import {
   fetchStations,
   fetchDraws,
@@ -8,12 +8,11 @@ import {
   generateAndSavePredictions,
   runAutoTune,
 } from "@/lib/data";
-import type { LotteryDraw } from "@/lib/supabase";
 
 export interface AppData {
-  stations: LotteryStation[];
-  selectedStation: LotteryStation | null;
-  draws: LotteryDraw[];
+  stations: Station[];
+  selectedStation: Station | null;
+  draws: DrawResult[];
   loading: boolean;
   error: string | null;
   selecting: boolean;
@@ -28,9 +27,9 @@ export interface AppData {
 }
 
 export function useAppData(): AppData {
-  const [stations, setStations] = useState<LotteryStation[]>([]);
-  const [selectedStation, setSelectedStation] = useState<LotteryStation | null>(null);
-  const [draws, setDraws] = useState<LotteryDraw[]>([]);
+  const [stations, setStations] = useState<Station[]>([]);
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const [draws, setDraws] = useState<DrawResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
@@ -56,8 +55,7 @@ export function useAppData(): AppData {
       await loadStations();
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadStations]);
 
   const selectStation = useCallback((id: string) => {
     setSelecting(true);
@@ -65,12 +63,12 @@ export function useAppData(): AppData {
     (async () => {
       try {
         const { data, error } = await supabase
-          .from("lottery_stations")
+          .from("stations")
           .select("*")
           .eq("id", id)
           .maybeSingle();
         if (error) throw error;
-        const station = data as LotteryStation;
+        const station = data as Station;
         setSelectedStation(station);
         const d = await fetchDraws(id);
         setDraws(d);
