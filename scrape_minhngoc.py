@@ -5,7 +5,7 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
-# Lấy thông tin cấu hình từ Environment Variables
+# Lấy thông tin cấu hình từ GitHub Secrets
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -16,7 +16,7 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# Bản đồ ánh chiếu tên đài Minh Ngọc sang station_id in hoa trong Supabase
+# Ánh chiếu tên đài Minh Ngọc sang station_id trong Supabase
 STATION_MAP = {
     # Miền Nam
     "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "Đồng Tháp": "DONGTHAP", "Cà Mau": "CAMAU",
@@ -27,14 +27,14 @@ STATION_MAP = {
     "Long An": "LONGAN", "Bình Phước": "BINHPHUOC", "Hậu Giang": "HAUGIANG",
     "Tiền Giang": "TIENGIANG", "Kiên Giang": "KIENGIANG", "Đà Lạt": "DALAT",
     # Miền Trung
-    "Thừa Thiên Huế": "TTHUE", "T.T.Huế": "TTHUE", "Phú Yên": "PHUYEN", "Đắk Lắk": "DAKLAK", "Quảng Nam": "QUANGNAM",
+    "Thừa Thiên Huế": "TTHUE", "T.T.Huế": "TTHUE", "Phú Yên": "PHUYEN", "Đắc Lắc": "DAKLAK", "Đắk Lắk": "DAKLAK", "Quảng Nam": "QUANGNAM",
     "Đà Nẵng": "DANANG", "Khánh Hòa": "KHANHHOA", "Bình Định": "BINHDINH", "Quảng Trị": "QUANGTRI",
     "Quảng Bình": "QUANGBINH", "Gia Lai": "GIALAI", "Ninh Thuận": "NINHTHUAN",
     "Quảng Ngãi": "QUANGNGAI", "Đắk Nông": "DAKNONG", "Kon Tum": "KONTUM"
 }
 
 def extract_2d_lo(prizes_raw):
-    """Trích xuất 2 số cuối của tất cả các giải (dùng cho thuật toán Decay 2D)"""
+    """Trích xuất 2 số cuối của tất cả các giải"""
     lo_set = []
     for p in prizes_raw:
         clean_p = re.sub(r'\D', '', str(p))
@@ -42,9 +42,10 @@ def extract_2d_lo(prizes_raw):
             lo_set.append(clean_p[-2:])
     return lo_set
 
-# ==================== 1. CÀO KẾT QUẢ MIỀN BẮC ====================
+# ==================== 1. CÀO MIỀN BẮC ====================
 def scrape_minhngoc_mb(date_str):
-    url = f"[suspicious link removed]{date_str}.html"
+    domain = "www.minhngoc.net.vn"
+    url = "https://" + domain + "/ket-qua-xo-so/ket-qua-xoso-mien-bac/" + date_str + ".html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -91,9 +92,10 @@ def scrape_minhngoc_mb(date_str):
         print(f"❌ Lỗi cào MB ngày {date_str}: {e}")
         return None
 
-# ==================== 2. CÀO KẾT QUẢ MIỀN NAM & MIỀN TRUNG ====================
+# ==================== 2. CÀO MIỀN NAM & MIỀN TRUNG ====================
 def scrape_minhngoc_mn_mt(region_code, date_str):
-    url = f"[suspicious link removed]{region_code}/{date_str}.html"
+    domain = "www.minhngoc.net.vn"
+    url = "https://" + domain + "/ket-qua-xo-so/" + region_code + "/" + date_str + ".html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -118,7 +120,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
             if len(tds) <= 1:
                 continue
 
-            prize_name = tds[0].text.strip()
+            prize_name = tds.text.strip()
             for idx, td in enumerate(tds[1:]):
                 if idx < len(station_names):
                     st_name = station_names[idx]
@@ -129,7 +131,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                     if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
                         station_results[st_name]["g8"].extend(nums)
                     elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
-                        station_results[st_name]["special"] = nums[0] if nums else ""
+                        station_results[st_name]["special"] = nums if nums else ""
 
                     station_results[st_name]["raw_prizes"].extend(nums)
 
@@ -154,6 +156,8 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
 
 # ==================== 3. LƯU & DỌN DẸP SUPABASE ====================
 def get_existing_count(station_id):
+    if not SUPABASE_URL:
+        return 0
     url = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=id"
     try:
         res = requests.get(url, headers=HEADERS_SUPABASE)
@@ -194,7 +198,7 @@ if __name__ == '__main__':
     
     print(f"🚀 Bắt đầu tiến trình cào dữ liệu xổ số tự động ngày {today_str}...")
 
-    # 1. Xử lý Miền Bắc
+    # 1. Cào Miền Bắc
     mb_count = get_existing_count("MB")
     if mb_count < 50:
         print(f"🔄 Đài MB mới có {mb_count}/50 kỳ. Đang nạp đủ 50 kỳ lịch sử...")
@@ -212,7 +216,7 @@ if __name__ == '__main__':
             save_to_supabase(item)
             clean_rolling_50("MB")
 
-    # 2. Xử lý Miền Nam & Miền Trung hôm nay
+    # 2. Cào Miền Nam & Miền Trung
     print(f"🌐 Đang cào Miền Nam & Miền Trung ngày {today_str}...")
     mn_items = scrape_minhngoc_mn_mt("mien-nam", today_str)
     for item in mn_items:
