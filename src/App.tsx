@@ -89,10 +89,6 @@ function App() {
 
       {/* Vùng nội dung chính bên phải */}
       <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
-        <div 
-  className="absolute inset-0 pointer-events-none bg-center bg-no-repeat bg-contain opacity-15 z-0" 
-  style={{ backgroundImage: "url('https://i.ibb.co/L5Zg3kF/than-tai-3d.png')" }} 
-/>
         {/* Header trên */}
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
