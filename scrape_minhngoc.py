@@ -5,6 +5,7 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
+# Lấy thông tin cấu hình từ Environment Variables
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -15,8 +16,25 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
+# Bản đồ ánh chiếu tên đài Minh Ngọc sang station_id in hoa trong Supabase
+STATION_MAP = {
+    # Miền Nam
+    "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "Đồng Tháp": "DONGTHAP", "Cà Mau": "CAMAU",
+    "Bến Tre": "BENTRE", "Vũng Tàu": "VUNGTAU", "Bạc Liêu": "BACLIEU",
+    "Đồng Nai": "DONGNAI", "Cần Thơ": "CANTHO", "Sóc Trăng": "SOCTRANG",
+    "Tây Ninh": "TAYNINH", "An Giang": "ANGIANG", "Bình Thuận": "BINHTHUAN",
+    "Vĩnh Long": "VINHLONG", "Bình Dương": "BINHDUONG", "Trà Vinh": "TRAVINH",
+    "Long An": "LONGAN", "Bình Phước": "BINHPHUOC", "Hậu Giang": "HAUGIANG",
+    "Tiền Giang": "TIENGIANG", "Kiên Giang": "KIENGIANG", "Đà Lạt": "DALAT",
+    # Miền Trung
+    "Thừa Thiên Huế": "TTHUE", "T.T.Huế": "TTHUE", "Phú Yên": "PHUYEN", "Đắk Lắk": "DAKLAK", "Quảng Nam": "QUANGNAM",
+    "Đà Nẵng": "DANANG", "Khánh Hòa": "KHANHHOA", "Bình Định": "BINHDINH", "Quảng Trị": "QUANGTRI",
+    "Quảng Bình": "QUANGBINH", "Gia Lai": "GIALAI", "Ninh Thuận": "NINHTHUAN",
+    "Quảng Ngãi": "QUANGNGAI", "Đắk Nông": "DAKNONG", "Kon Tum": "KONTUM"
+}
+
 def extract_2d_lo(prizes_raw):
-    """Trích xuất mảng 2 số cuối từ danh sách tất cả các giải (Lô 2D)"""
+    """Trích xuất 2 số cuối của tất cả các giải (dùng cho thuật toán Decay 2D)"""
     lo_set = []
     for p in prizes_raw:
         clean_p = re.sub(r'\D', '', str(p))
@@ -24,11 +42,9 @@ def extract_2d_lo(prizes_raw):
             lo_set.append(clean_p[-2:])
     return lo_set
 
+# ==================== 1. CÀO KẾT QUẢ MIỀN BẮC ====================
 def scrape_minhngoc_mb(date_str):
-    domain = "www.minhngoc.net.vn"
-    path = "/ket-qua-xo-so/ket-qua-xoso-mien-bac/"
-    url = f"https://{domain}{path}{date_str}.html"
-
+    url = f"[suspicious link removed]{date_str}.html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -58,7 +74,6 @@ def scrape_minhngoc_mb(date_str):
                 prizes_raw.extend(nums)
 
         prizes_raw.extend(g7_numbers)
-
         if not prizes_raw:
             return None
 
@@ -69,14 +84,76 @@ def scrape_minhngoc_mb(date_str):
             "station_id": "MB",
             "draw_date": db_date,
             "special_prize": special_prize,
-            "seventh_or_eighth": g7_numbers, # Giải 7 MB
-            "lo_numbers": lo_numbers         # Mảng 2 số cuối cho thuật toán Decay
+            "seventh_or_eighth": g7_numbers,
+            "lo_numbers": lo_numbers
         }
     except Exception as e:
-        print(f"❌ Lỗi khi cào ngày {date_str}: {e}")
+        print(f"❌ Lỗi cào MB ngày {date_str}: {e}")
         return None
 
-def get_existing_count(station_id="MB"):
+# ==================== 2. CÀO KẾT QUẢ MIỀN NAM & MIỀN TRUNG ====================
+def scrape_minhngoc_mn_mt(region_code, date_str):
+    url = f"[suspicious link removed]{region_code}/{date_str}.html"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    try:
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(res.text, 'html.parser')
+        box_table = soup.find('table', class_=re.compile(r'bkqtmiennam|bkqtmientrung'))
+        if not box_table:
+            return []
+
+        header_row = box_table.find('tr', class_='header')
+        if not header_row:
+            return []
+
+        station_names = [td.text.strip() for td in header_row.find_all('td') if td.text.strip()]
+        station_results = {name: {"special": "", "g8": [], "raw_prizes": []} for name in station_names}
+
+        rows = box_table.find_all('tr')
+        for row in rows:
+            tds = row.find_all('td')
+            if len(tds) <= 1:
+                continue
+
+            prize_name = tds[0].text.strip()
+            for idx, td in enumerate(tds[1:]):
+                if idx < len(station_names):
+                    st_name = station_names[idx]
+                    nums = [re.sub(r'\D', '', n) for n in td.text.split('-') if n.strip().isdigit()]
+                    if not nums:
+                        continue
+                    
+                    if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
+                        station_results[st_name]["g8"].extend(nums)
+                    elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
+                        station_results[st_name]["special"] = nums[0] if nums else ""
+
+                    station_results[st_name]["raw_prizes"].extend(nums)
+
+        db_date = datetime.datetime.strptime(date_str, "%d-%m-%Y").strftime("%Y-%m-%d")
+        records = []
+
+        for name, res_data in station_results.items():
+            st_id = STATION_MAP.get(name)
+            if st_id and res_data["raw_prizes"]:
+                lo_numbers = extract_2d_lo(res_data["raw_prizes"])
+                records.append({
+                    "station_id": st_id,
+                    "draw_date": db_date,
+                    "special_prize": res_data["special"],
+                    "seventh_or_eighth": res_data["g8"],
+                    "lo_numbers": lo_numbers
+                })
+        return records
+    except Exception as e:
+        print(f"❌ Lỗi cào {region_code} ngày {date_str}: {e}")
+        return []
+
+# ==================== 3. LƯU & DỌN DẸP SUPABASE ====================
+def get_existing_count(station_id):
     url = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=id"
     try:
         res = requests.get(url, headers=HEADERS_SUPABASE)
@@ -87,16 +164,18 @@ def get_existing_count(station_id="MB"):
     return 0
 
 def save_to_supabase(data):
-    if not data:
+    if not data or not SUPABASE_URL:
         return
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
     resp = requests.post(endpoint, json=data, headers=HEADERS_SUPABASE)
     if resp.status_code in (200, 201):
         print(f"✅ Đã lưu thành công đài {data['station_id']} ngày {data['draw_date']}")
     else:
-        print(f"❌ Lỗi lưu Supabase: {resp.status_code} - {resp.text}")
+        print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: {resp.status_code} - {resp.text}")
 
-def clean_rolling_50(station_id="MB"):
+def clean_rolling_50(station_id):
+    if not SUPABASE_URL:
+        return
     url = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=id&order=draw_date.desc&offset=50"
     try:
         res = requests.get(url, headers=HEADERS_SUPABASE).json()
@@ -104,31 +183,45 @@ def clean_rolling_50(station_id="MB"):
             old_ids = [str(row['id']) for row in res]
             delete_url = f"{SUPABASE_URL}/rest/v1/draw_results?id=in.({','.join(old_ids)})"
             requests.delete(delete_url, headers=HEADERS_SUPABASE)
-            print(f"🧹 Đã dọn dẹp {len(old_ids)} kỳ cũ.")
+            print(f"🧹 Đã dọn dẹp {len(old_ids)} kỳ cũ của đài {station_id}.")
     except Exception as e:
-        print(f"Lỗi dọn dẹp: {e}")
+        print(f"Lỗi dọn dẹp đài {station_id}: {e}")
 
+# ==================== 4. CHƯƠNG TRÌNH CHÍNH ====================
 if __name__ == '__main__':
-    count = get_existing_count("MB")
-    print(f"📊 Số kỳ hiện có trong Supabase đài MB: {count}/50")
+    today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
+    today_str = today.strftime("%d-%m-%Y")
+    
+    print(f"🚀 Bắt đầu tiến trình cào dữ liệu xổ số tự động ngày {today_str}...")
 
-    if count < 50:
-        print(f"🚀 Bắt đầu tự động cào 50 kỳ gần nhất cho MB...")
-        today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
+    # 1. Xử lý Miền Bắc
+    mb_count = get_existing_count("MB")
+    if mb_count < 50:
+        print(f"🔄 Đài MB mới có {mb_count}/50 kỳ. Đang nạp đủ 50 kỳ lịch sử...")
         for i in range(50):
-            target_date = today - datetime.timedelta(days=i)
-            date_str = target_date.strftime("%d-%m-%Y")
-            print(f"[{i+1}/50] Đang cào ngày {date_str}...")
-            data = scrape_minhngoc_mb(date_str)
-            if data:
-                save_to_supabase(data)
-            time.sleep(0.3)
+            d_str = (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
+            item = scrape_minhngoc_mb(d_str)
+            if item:
+                save_to_supabase(item)
+            time.sleep(0.2)
         clean_rolling_50("MB")
-        print("🎉 Đã nạp xong 50 kỳ cho đài MB!")
     else:
-        today_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).strftime("%d-%m-%Y")
-        print(f"🚀 Đã có đủ 50 kỳ. Đang cào bổ sung ngày {today_str}...")
-        data = scrape_minhngoc_mb(today_str)
-        if data:
-            save_to_supabase(data)
+        print(f"✅ Đài MB đã đủ 50 kỳ. Cào bổ sung hôm nay ({today_str})...")
+        item = scrape_minhngoc_mb(today_str)
+        if item:
+            save_to_supabase(item)
             clean_rolling_50("MB")
+
+    # 2. Xử lý Miền Nam & Miền Trung hôm nay
+    print(f"🌐 Đang cào Miền Nam & Miền Trung ngày {today_str}...")
+    mn_items = scrape_minhngoc_mn_mt("mien-nam", today_str)
+    for item in mn_items:
+        save_to_supabase(item)
+        clean_rolling_50(item["station_id"])
+
+    mt_items = scrape_minhngoc_mn_mt("mien-trung", today_str)
+    for item in mt_items:
+        save_to_supabase(item)
+        clean_rolling_50(item["station_id"])
+
+    print("🎉 Hoàn tất quá trình cào và cập nhật 50 kỳ cuốn chiếu!")
