@@ -28,8 +28,10 @@ def parse_digit_positions(prize_str):
 
 
 def scrape_minhngoc_mb(date_str):
-base_url = "https:" + "//www.minhngoc.net.vn/ket-qua-xo-so/ket-qua-xoso-mien-bac/"
-    url = f"{base_url}{date_str}.html"
+  domain = 'www.minhngoc.net.vn'
+  path = '/ket-qua-xo-so/ket-qua-xoso-mien-bac/'
+  url = f'https://{domain}{path}{date_str}.html'
+
   headers = {
       'User-Agent': (
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -71,7 +73,7 @@ base_url = "https:" + "//www.minhngoc.net.vn/ket-qua-xo-so/ket-qua-xoso-mien-bac
     return {
         'station_id': 'MB',
         'draw_date': db_date,
-        'special_prize': prizes_raw[0] if prizes_raw else '',
+        'special_prize': prizes_raw if prizes_raw else '',
         'all_prizes': parsed_prizes,
     }
   except Exception as e:
@@ -122,7 +124,6 @@ if __name__ == '__main__':
   count = get_existing_count('MB')
   print(f'📊 Số kỳ hiện có trong Supabase: {count}/50')
 
-  # Nếu chưa đủ 50 kỳ -> Tự động cào 50 ngày quá khứ
   if count < 50:
     print(
         f'🚀 Chưa đủ 50 kỳ (hiện có {count}). Bắt đầu tự động cào 50 kỳ gần'
@@ -142,7 +143,6 @@ if __name__ == '__main__':
     clean_rolling_50('MB')
     print('🎉 Đã nạp xong 50 kỳ vào Supabase!')
   else:
-    # Đã đủ 50 kỳ -> Chỉ cào ngày hôm nay
     today_str = datetime.datetime.now(
         datetime.timezone(datetime.timedelta(hours=7))
     ).strftime('%d-%m-%Y')
