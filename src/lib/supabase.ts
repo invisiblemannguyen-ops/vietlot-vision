@@ -1,19 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+// 🔴 THAY BẰNG LINK URL SUPABASE CỦA BẠN (Ví dụ: https://xyz.supabase.co)
+const supabaseUrl = "https://YOUR_SUPABASE_PROJECT_ID.supabase.co";
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  // In dev preview these are injected by Bolt; guard against undefined during build.
-  console.warn(
-    "Supabase env vars missing. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set."
-  );
-}
+// 🟢 KEY PUBLISHABLE CỦA BẠN ĐÃ ĐƯỢC ĐIỀN SẴN:
+const supabaseAnonKey = "sb_publishable_gd0nNLRnNq4ppRWbMk6KEw_F8n13jQf";
 
-export const supabase = createClient(
-  supabaseUrl ?? "https://placeholder.supabase.co",
-  supabaseAnonKey ?? "placeholder-anon-key"
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export type LotteryRegion = "XSMB" | "XSMN" | "XSMT";
 
