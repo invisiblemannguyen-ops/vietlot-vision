@@ -17,7 +17,7 @@ export function Sidebar({
   onSelectStation: (id: string) => void;
 }) {
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-white/5 bg-ink-900/60 backdrop-blur-xl">
+    <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-white/5 bg-ink-900/60 backdrop-blur-xl">
       <div className="flex items-center gap-3 px-5 py-5">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 text-slate-950 shadow-lg shadow-sky-500/30">
           <Ticket className="h-5 w-5" />
