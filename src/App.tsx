@@ -81,6 +81,10 @@ function App() {
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
+      <div 
+        className="fixed inset-0 pointer-events-none bg-center bg-no-repeat bg-contain opacity-20 z-50" 
+        style={{ backgroundImage: `url(${'https://' + 'i.ibb.co/L5Zg3kF/than-tai-3d.png'})` }} 
+      />
       {/* Cột Menu 3 Miền bên trái */}
       <Sidebar
         selectedRegion={selectedRegion}
