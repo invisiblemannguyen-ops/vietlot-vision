@@ -1,9 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Sidebar, type RegionId } from "@/components/Sidebar";
 import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
-import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
 import {
   ArrowLeft,
   ChevronRight,
@@ -36,13 +35,11 @@ const DEFAULT_STATIONS: Record<
   ],
 };
 
-// 7 danh mục dự đoán
+// 5 danh mục dự đoán bị che mờ
 const PREDICTION_TYPES = [
-  { id: "bao_lo_2d", title: "Bao Lô 2 Số", mockNums: "48" },
-  { id: "bao_lo_3d", title: "Bao Lô 3 Số", mockNums: "348" },
-  { id: "xien_2", title: "Xiên 2", mockNums: "48 - 92" },
-  { id: "xien_3", title: "Xiên 3", mockNums: "48 - 92 - 15" },
-  { id: "xien_truot", title: "Xiên Trượt (4 Số Gan)", mockNums: "04, 18, 32, 79" },
+  { id: "bao_2", title: "Bao Lô 2 Số", mockNums: "48 - 92 - 15" },
+  { id: "bao_3", title: "Bao Lô 3 Số", mockNums: "348 - 792 - 115" },
+  { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
   { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
   { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
 ];
@@ -54,60 +51,17 @@ function App() {
   const [selectedStation, setSelectedStation] = useState<{ id: string; name: string; region: string } | null>(null);
   const [selectedDay, setSelectedDay] = useState<string>("Thứ 5");
   
+  // Tab dưới cùng: "home" (Trang Chủ) hoặc "results" (Kết Quả)
   const [activeTab, setActiveTab] = useState<"home" | "results">("home");
+
+  // Trạng thái mở khóa khi bấm nút "Xem"
   const [unlockedItems, setUnlockedItems] = useState<Record<string, boolean>>({});
 
   const app = useAppData();
 
-  // Tự động tính số dự đoán thật từ 50 kỳ bằng thuật toán Decay
-  const realPredictions = useMemo(() => {
-    if (!selectedStation || !app.draws || app.draws.length === 0) return null;
-    try {
-      return generatePredictionsFromDecay(app.draws);
-    } catch {
-      return null;
-    }
-  }, [selectedStation, app.draws]);
-
-  // Hàm lấy chuỗi hiển thị số dự đoán thật
-  const getPredictionText = (item: typeof PREDICTION_TYPES[number]) => {
-    if (!realPredictions) return item.mockNums;
-
-    switch (item.id) {
-      case "bao_lo_2d":
-        return realPredictions.baoLo2D?.join(" - ") || item.mockNums;
-      case "bao_lo_3d":
-        return realPredictions.baoLo3D?.join(" - ") || item.mockNums;
-      case "xien_2":
-        return realPredictions.xien2?.join(" - ") || item.mockNums;
-      case "xien_3":
-        return realPredictions.xien3?.join(" - ") || item.mockNums;
-      case "xien_truot":
-        return realPredictions.xienTruot?.join(", ") || item.mockNums;
-      case "dau_duoi": {
-        const val = realPredictions.dauDuoi?.[0];
-        if (val && val.length === 2) {
-          return `Đầu ${val[0]} - Đuôi ${val[1]}`;
-        }
-        return realPredictions.dauDuoi?.join(" - ") || item.mockNums;
-      }
-      case "doc_dac":
-        return realPredictions.docDac?.join(" - ") || item.mockNums;
-      default:
-        return item.mockNums;
-    }
-  };
-
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
-    setSelectedStation(null);
-  };
-
-  const handleSelectStation = (st: any) => {
-    setSelectedStation(st);
-    if (app.selectStation) {
-      app.selectStation(st.id);
-    }
+    setSelectedStation(null); // Trở về danh sách đài khi đổi miền
   };
 
   const handleUnlock = (typeId: string) => {
@@ -116,6 +70,7 @@ function App() {
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
 
+  // Lấy đài theo Miền (có bộ lọc dự phòng)
   let stationsInRegion = (app.stations || []).filter(
     (s) => s.region === selectedRegion || s.region?.toUpperCase() === selectedRegion
   );
@@ -126,14 +81,15 @@ function App() {
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
-      {/* Sidebar 3 Miền */}
+      {/* Cột Menu 3 Miền bên trái */}
       <Sidebar
         selectedRegion={selectedRegion}
         onSelectRegion={handleSelectRegion}
       />
 
+      {/* Vùng nội dung chính bên phải */}
       <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
-        {/* Header */}
+        {/* Header trên */}
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -156,7 +112,7 @@ function App() {
           </div>
         </header>
 
-        {/* Chọn Thứ */}
+        {/* Thanh chọn Thứ trong tuần */}
         <div className="flex items-center gap-1.5 overflow-x-auto border-b border-white/5 bg-ink-900/30 px-3 py-2 shrink-0">
           {WEEKDAYS.map((day) => {
             const isActive = selectedDay === day;
@@ -176,12 +132,14 @@ function App() {
           })}
         </div>
 
-        {/* Nội dung chính */}
+        {/* Vùng cuộn chính */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20">
           <div className="mx-auto w-full max-w-2xl space-y-4">
 
+            {/* TAB 1: TRANG CHỦ */}
             {activeTab === "home" && (
               <>
+                {/* BƯỚC 1: Danh sách các đài mở thưởng */}
                 {!selectedStation ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between pb-1">
@@ -196,7 +154,7 @@ function App() {
                       {stationsInRegion.map((st) => (
                         <button
                           key={st.id}
-                          onClick={() => handleSelectStation(st)}
+                          onClick={() => setSelectedStation(st)}
                           className="group flex items-center justify-between rounded-2xl border border-white/10 bg-gradient-to-r from-slate-900/90 to-slate-900/50 p-3.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
                         >
                           <div className="flex items-center gap-3">
@@ -209,7 +167,7 @@ function App() {
                               </h3>
                               <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                                 <Clock className="h-3 w-3 text-slate-400" />
-                                <span>Giờ quay: {(st as any).time || "17:15"}</span>
+                                <span>Giờ quay: {st.time || "17:15"}</span>
                               </p>
                             </div>
                           </div>
@@ -223,6 +181,7 @@ function App() {
                     </div>
                   </div>
                 ) : (
+                  /* BƯỚC 2: Màn hình 5 mục dự đoán che mờ + Nút "Xem" */
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
                       <button
@@ -239,10 +198,10 @@ function App() {
                       </div>
                     </div>
 
+                    {/* Danh sách 5 mục dự đoán */}
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
                         const isUnlocked = unlockedItems[item.id];
-                        const displayNums = getPredictionText(item);
 
                         return (
                           <div
@@ -261,6 +220,7 @@ function App() {
                               )}
                             </div>
 
+                            {/* Vùng che mờ + Nút "Xem" */}
                             <div className="relative flex items-center justify-center rounded-xl bg-ink-950/90 py-4 px-3 border border-white/5 min-h-[56px]">
                               <div
                                 className={`text-base sm:text-lg font-mono font-bold tracking-wider transition-all duration-300 ${
@@ -269,7 +229,7 @@ function App() {
                                     : "text-slate-600 blur-md select-none pointer-events-none"
                                 }`}
                               >
-                                {displayNums}
+                                {item.mockNums}
                               </div>
 
                               {!isUnlocked && (
@@ -293,6 +253,7 @@ function App() {
               </>
             )}
 
+            {/* TAB 2: KẾT QUẢ XỔ SỐ */}
             {activeTab === "results" && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
@@ -311,12 +272,11 @@ function App() {
                     <p className="text-[11px] text-slate-400 mt-0.5">Kết quả mở thưởng trực tiếp</p>
                   </div>
 
+                  {/* Bảng kết quả */}
                   <div className="space-y-2 text-xs sm:text-sm">
                     <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
                       <span className="font-bold text-amber-300">Đặc Biệt</span>
-                      <span className="font-mono font-bold text-base text-amber-200">
-                        {app.draws?.[0]?.special_prize || "58294"}
-                      </span>
+                      <span className="font-mono font-bold text-base text-amber-200">58294</span>
                     </div>
                     <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
                       <span className="text-slate-400">Giải Nhất</span>
@@ -338,7 +298,7 @@ function App() {
           </div>
         </div>
 
-        {/* Tabs Bottom */}
+        {/* Thanh 2 Tab nằm dưới cùng */}
         <div className="absolute bottom-0 left-0 right-0 h-14 bg-ink-900/95 border-t border-white/10 backdrop-blur-xl px-6 flex justify-around items-center z-30">
           <button
             onClick={() => setActiveTab("home")}
