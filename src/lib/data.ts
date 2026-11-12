@@ -1,82 +1,76 @@
 import { supabase } from "./supabase";
-import type {
-  Station,
-  DrawResult,
-  Prediction,
-  PredictionType,
-} from "./supabase";
+import type { Station, DrawResult, Prediction } from "./supabase";
 import { generatePredictionsFromDecay } from "./decayAlgorithm";
 
 const ROLLING_WINDOW = 50;
 
-/* ----------------------------- 1. STATIONS ----------------------------- */
-
 export async function fetchStations(): Promise<Station[]> {
-  const { data, error } = await supabase
-    .from("stations")
-    .select("*")
-    .order("name", { ascending: true });
-  if (error) return [];
-  return (data ?? []) as Station[];
+  try {
+    const { data, error } = await supabase
+      .from("stations")
+      .select("*")
+      .order("name", { ascending: true });
+    if (error) return [];
+    return (data ?? []) as Station[];
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchStation(id: string): Promise<Station | null> {
-  const { data, error } = await supabase
-    .from("stations")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) return null;
-  return (data as Station) ?? null;
+  try {
+    const { data, error } = await supabase
+      .from("stations")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return null;
+    return (data as Station) ?? null;
+  } catch {
+    return null;
+  }
 }
-
-/* ------------------------------ 2. DRAWS ------------------------------- */
 
 export async function fetchDraws(stationId: string): Promise<DrawResult[]> {
-  const { data, error } = await supabase
-    .from("draw_results")
-    .select("*")
-    .eq("station_id", stationId)
-    .order("draw_date", { ascending: false })
-    .limit(ROLLING_WINDOW);
+  try {
+    const { data, error } = await supabase
+      .from("draw_results")
+      .select("*")
+      .eq("station_id", stationId)
+      .order("draw_date", { ascending: false })
+      .limit(ROLLING_WINDOW);
 
-  if (error) return [];
-  return (data ?? []).map((d: any) => ({
-    id: String(d.id),
-    station_id: d.station_id,
-    draw_date: d.draw_date,
-    special_prize: d.special_prize || null,
-    lo_numbers: d.lo_numbers || [],
-    seventh_or_eighth: d.seventh_or_eighth || [],
-  })) as DrawResult[];
+    if (error) return [];
+    return (data ?? []).map((d: any) => ({
+      id: String(d.id),
+      station_id: d.station_id,
+      draw_date: d.draw_date,
+      special_prize: d.special_prize || null,
+      lo_numbers: d.lo_numbers || [],
+      seventh_or_eighth: d.seventh_or_eighth || [],
+    })) as DrawResult[];
+  } catch {
+    return [];
+  }
 }
-
-/* -------------------------- 3. PREDICTIONS ----------------------------- */
 
 export async function fetchRecentPredictions(
   stationId: string,
   limit = 24
 ): Promise<Prediction[]> {
-  const { data, error } = await supabase
-    .from("predictions")
-    .select("*")
-    .eq("station_id", stationId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  try {
+    const { data, error } = await supabase
+      .from("predictions")
+      .select("*")
+      .eq("station_id", stationId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
-  if (error) return [];
-  return (data ?? []) as Prediction[];
-}
-
-export async function fetchEvaluatedCount(stationId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from("predictions")
-    .select("*", { count: "exact", head: true })
-    .eq("station_id", stationId)
-    .eq("status", "EVALUATED");
-
-  if (error) return 0;
-  return count ?? 0;
+    if (error) return [];
+    return (data ?? []) as Prediction[];
+  } catch {
+    return [];
+  }
 }
 
 export async function generateAndSavePredictions(
@@ -102,6 +96,5 @@ export async function generateAndSavePredictions(
   return (data ?? []) as Prediction[];
 }
 
-export async function fetchTuningLogs(stationId: string, limit = 12) {
-  return [];
-}
+export async function seedDemoDraws(stations: Station[]): Promise<void> {}
+export async function runAutoTune(station: Station, draws: DrawResult[]): Promise<void> {}
