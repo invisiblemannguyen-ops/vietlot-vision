@@ -16,14 +16,26 @@ export const STATION_META: StationMeta[] = [
   { id: "cantho", name: "Cần Thơ", region: "XSMN", short: "CTO" },
 ];
 
-export const REGION_LABELS: Record<LotteryRegion, string> = {
+export const REGION_LABELS: Record<string, string> = {
+  BAC: "Miền Bắc",
+  TRUNG: "Miền Trung",
+  NAM: "Miền Nam",
   XSMB: "Miền Bắc",
-  XSMN: "Miền Nam",
   XSMT: "Miền Trung",
+  XSMN: "Miền Nam",
+  MB: "Miền Bắc",
+  MT: "Miền Trung",
+  MN: "Miền Nam",
 };
 
-export const REGION_COLORS: Record<LotteryRegion, string> = {
+export const REGION_COLORS: Record<string, string> = {
+  BAC: "text-sky-400",
+  TRUNG: "text-amber-400",
+  NAM: "text-emerald-400",
   XSMB: "text-sky-400",
-  XSMN: "text-emerald-400",
   XSMT: "text-amber-400",
+  XSMN: "text-emerald-400",
+  MB: "text-sky-400",
+  MT: "text-amber-400",
+  MN: "text-emerald-400",
 };
