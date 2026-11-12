@@ -1,74 +1,107 @@
-import { supabase, type Station, type DrawResult, type Prediction } from "./supabase";
+import { supabase } from "./supabase";
+import type {
+  Station,
+  DrawResult,
+  Prediction,
+  PredictionType,
+} from "./supabase";
 import { generatePredictionsFromDecay } from "./decayAlgorithm";
 
-/* ----------------------------- 1. Stations & Configs ----------------------------- */
+const ROLLING_WINDOW = 50;
+
+/* ----------------------------- 1. STATIONS ----------------------------- */
 
 export async function fetchStations(): Promise<Station[]> {
   const { data, error } = await supabase
     .from("stations")
     .select("*")
-    .order("region", { ascending: true })
     .order("name", { ascending: true });
-  if (error) throw error;
+  if (error) return [];
   return (data ?? []) as Station[];
 }
 
-export async function fetchModelConfig(stationId: string) {
+export async function fetchStation(id: string): Promise<Station | null> {
   const { data, error } = await supabase
-    .from("model_configs")
+    .from("stations")
     .select("*")
-    .eq("station_id", stationId)
+    .eq("id", id)
     .maybeSingle();
-  if (error) return { w1: 5.0, w2: 3.0, w3: 2.0 };
-  return data ? { w1: data.w1, w2: data.w2, w3: data.w3 } : { w1: 5.0, w2: 3.0, w3: 2.0 };
+  if (error) return null;
+  return (data as Station) ?? null;
 }
 
-/* ------------------------------ 2. Draws (50 Kỳ Quay) ------------------------------- */
+/* ------------------------------ 2. DRAWS ------------------------------- */
 
-export async function fetchRecentDraws(stationId: string, limit = 50): Promise<DrawResult[]> {
+export async function fetchDraws(stationId: string): Promise<DrawResult[]> {
   const { data, error } = await supabase
     .from("draw_results")
     .select("*")
     .eq("station_id", stationId)
     .order("draw_date", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data ?? []) as DrawResult[];
+    .limit(ROLLING_WINDOW);
+
+  if (error) return [];
+  return (data ?? []).map((d: any) => ({
+    id: String(d.id),
+    station_id: d.station_id,
+    draw_date: d.draw_date,
+    special_prize: d.special_prize || null,
+    lo_numbers: d.lo_numbers || [],
+    seventh_or_eighth: d.seventh_or_eighth || [],
+  })) as DrawResult[];
 }
 
-/* -------------------------- 3. Stage 1: Dự đoán mới (PENDING) ----------------------------- */
+/* -------------------------- 3. PREDICTIONS ----------------------------- */
 
-export async function generateAndSavePredictions(stationId: string, targetDate: string) {
-  const draws = await fetchRecentDraws(stationId, 50);
-  if (draws.length === 0) return null;
-
-  const weights = await fetchModelConfig(stationId);
-  const predictions = generatePredictionsFromDecay(draws, weights);
-
-  const rows = [
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "bao_lo_2d", numbers: predictions.baoLo2D, status: "PENDING" },
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "bao_lo_3d", numbers: predictions.baoLo3D, status: "PENDING" },
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "dau_duoi", numbers: predictions.dauDuoi, status: "PENDING" },
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "xien_2", numbers: predictions.xien2, status: "PENDING" },
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "xien_3", numbers: predictions.xien3, status: "PENDING" },
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "xien_truot", numbers: predictions.xienTruot, status: "PENDING" },
-    { station_id: stationId, target_draw_date: targetDate, prediction_type: "doc_dac", numbers: predictions.docDac, status: "PENDING" },
-  ];
-
-  const { data, error } = await supabase.from("predictions").insert(rows).select("*");
-  if (error) throw error;
-  return data as Prediction[];
-}
-
-/* -------------------------- 4. Stage 2: Soi vé khi có KQ mới (EVALUATED) ----------------------------- */
-
-export async function fetchPendingPredictions(stationId: string): Promise<Prediction[]> {
+export async function fetchRecentPredictions(
+  stationId: string,
+  limit = 24
+): Promise<Prediction[]> {
   const { data, error } = await supabase
     .from("predictions")
     .select("*")
     .eq("station_id", stationId)
-    .eq("status", "PENDING")
-    .order("target_draw_date", { ascending: false });
-  if (error) throw error;
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) return [];
   return (data ?? []) as Prediction[];
+}
+
+export async function fetchEvaluatedCount(stationId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("predictions")
+    .select("*", { count: "exact", head: true })
+    .eq("station_id", stationId)
+    .eq("status", "EVALUATED");
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function generateAndSavePredictions(
+  station: Station,
+  draws: DrawResult[]
+): Promise<Prediction[]> {
+  if (!station || draws.length === 0) return [];
+  const targetStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const generated = generatePredictionsFromDecay(draws);
+
+  const rows = [
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "bao_lo_2d", numbers: generated.baoLo2D, status: "PENDING" },
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "bao_lo_3d", numbers: generated.baoLo3D, status: "PENDING" },
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "dau_duoi", numbers: generated.dauDuoi, status: "PENDING" },
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "xien_2", numbers: generated.xien2, status: "PENDING" },
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "xien_3", numbers: generated.xien3, status: "PENDING" },
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "xien_truot", numbers: generated.xienTruot, status: "PENDING" },
+    { station_id: station.id, target_draw_date: targetStr, prediction_type: "doc_dac", numbers: generated.docDac, status: "PENDING" },
+  ];
+
+  const { data, error } = await supabase.from("predictions").insert(rows).select("*");
+  if (error) return [];
+  return (data ?? []) as Prediction[];
+}
+
+export async function fetchTuningLogs(stationId: string, limit = 12) {
+  return [];
 }
