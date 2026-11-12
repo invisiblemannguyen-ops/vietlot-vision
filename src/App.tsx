@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Sidebar, type RegionId } from "@/components/Sidebar";
 import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
+import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
 import {
   ArrowLeft,
   ChevronRight,
@@ -35,11 +36,13 @@ const DEFAULT_STATIONS: Record<
   ],
 };
 
-// 5 danh mục dự đoán bị che mờ
+// 7 danh mục dự đoán (đầy đủ các hạng mục theo yêu cầu)
 const PREDICTION_TYPES = [
-  { id: "bao_2", title: "Bao Lô 2 Số", mockNums: "48 - 92 - 15" },
-  { id: "bao_3", title: "Bao Lô 3 Số", mockNums: "348 - 792 - 115" },
-  { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
+  { id: "bao_lo_2d", title: "Bao Lô 2 Số", mockNums: "48" },
+  { id: "bao_lo_3d", title: "Bao Lô 3 Số", mockNums: "348" },
+  { id: "xien_2", title: "Xiên 2", mockNums: "48 - 92" },
+  { id: "xien_3", title: "Xiên 3", mockNums: "48 - 92 - 15" },
+  { id: "xien_truot", title: "Xiên Trượt (4 Số Gan)", mockNums: "04, 18, 32, 79" },
   { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
   { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
 ];
@@ -59,9 +62,55 @@ function App() {
 
   const app = useAppData();
 
+  // Tự động tính số dự đoán thật từ 50 kỳ bằng thuật toán Decay khi đài được chọn
+  const realPredictions = useMemo(() => {
+    if (!selectedStation || !app.draws || app.draws.length === 0) return null;
+    try {
+      return generatePredictionsFromDecay(app.draws);
+    } catch {
+      return null;
+    }
+  }, [selectedStation, app.draws]);
+
+  // Hàm lấy chuỗi hiển thị con số dự đoán thật
+  const getPredictionText = (item: typeof PREDICTION_TYPES[number]) => {
+    if (!realPredictions) return item.mockNums;
+
+    switch (item.id) {
+      case "bao_lo_2d":
+        return realPredictions.baoLo2D?.join(" - ") || item.mockNums;
+      case "bao_lo_3d":
+        return realPredictions.baoLo3D?.join(" - ") || item.mockNums;
+      case "xien_2":
+        return realPredictions.xien2?.join(" - ") || item.mockNums;
+      case "xien_3":
+        return realPredictions.xien3?.join(" - ") || item.mockNums;
+      case "xien_truot":
+        return realPredictions.xienTruot?.join(", ") || item.mockNums;
+      case "dau_duoi": {
+        const val = realPredictions.dauDuoi?.[0];
+        if (val && val.length === 2) {
+          return `Đầu ${val[0]} - Đuôi ${val[1]}`;
+        }
+        return realPredictions.dauDuoi?.join(" - ") || item.mockNums;
+      }
+      case "doc_dac":
+        return realPredictions.docDac?.join(" - ") || item.mockNums;
+      default:
+        return item.mockNums;
+    }
+  };
+
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
     setSelectedStation(null); // Trở về danh sách đài khi đổi miền
+  };
+
+  const handleSelectStation = (st: any) => {
+    setSelectedStation(st);
+    if (app.selectStation) {
+      app.selectStation(st.id);
+    }
   };
 
   const handleUnlock = (typeId: string) => {
@@ -93,13 +142,13 @@ function App() {
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
-  <span className="text-amber-300 text-base sm:text-lg font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-lg border border-amber-400/50 shadow-md shadow-rose-500/30">
-  AI
-</span>
-<span className="font-bold text-sm sm:text-base text-white">
-  Soi Cầu 3 Miền
-</span>
-</div>
+              <span className="text-amber-300 text-base sm:text-lg font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-lg border border-amber-400/50 shadow-md shadow-rose-500/30">
+                AI
+              </span>
+              <span className="font-bold text-sm sm:text-base text-white">
+                Soi Cầu 3 Miền
+              </span>
+            </div>
             <span className="text-xs text-sky-400 font-semibold">
               [{REGION_LABELS[selectedRegion] || selectedRegion}]
             </span>
@@ -154,7 +203,7 @@ function App() {
                       {stationsInRegion.map((st) => (
                         <button
                           key={st.id}
-                          onClick={() => setSelectedStation(st)}
+                          onClick={() => handleSelectStation(st)}
                           className="group flex items-center justify-between rounded-2xl border border-white/10 bg-gradient-to-r from-slate-900/90 to-slate-900/50 p-3.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
                         >
                           <div className="flex items-center gap-3">
@@ -167,7 +216,7 @@ function App() {
                               </h3>
                               <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                                 <Clock className="h-3 w-3 text-slate-400" />
-                                <span>Giờ quay: {st.time || "17:15"}</span>
+                                <span>Giờ quay: {(st as any).time || "17:15"}</span>
                               </p>
                             </div>
                           </div>
@@ -181,7 +230,7 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  /* BƯỚC 2: Màn hình 5 mục dự đoán che mờ + Nút "Xem" */
+                  /* BƯỚC 2: Màn hình các mục dự đoán che mờ + Nút "Xem" */
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
                       <button
@@ -198,10 +247,11 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Danh sách 5 mục dự đoán */}
+                    {/* Danh sách các mục dự đoán */}
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
                         const isUnlocked = unlockedItems[item.id];
+                        const displayNums = getPredictionText(item);
 
                         return (
                           <div
@@ -229,7 +279,7 @@ function App() {
                                     : "text-slate-600 blur-md select-none pointer-events-none"
                                 }`}
                               >
-                                {item.mockNums}
+                                {displayNums}
                               </div>
 
                               {!isUnlocked && (
@@ -276,7 +326,9 @@ function App() {
                   <div className="space-y-2 text-xs sm:text-sm">
                     <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
                       <span className="font-bold text-amber-300">Đặc Biệt</span>
-                      <span className="font-mono font-bold text-base text-amber-200">58294</span>
+                      <span className="font-mono font-bold text-base text-amber-200">
+                        {app.draws?.[0]?.special_prize || "58294"}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
                       <span className="text-slate-400">Giải Nhất</span>
