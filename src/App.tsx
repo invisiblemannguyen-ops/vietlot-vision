@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Sidebar, type RegionId } from "@/components/Sidebar";
 import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
 import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
 import { SCHEDULE_BY_DAY } from "@/lib/schedule";
-import { fetchDraws } from "@/lib/data";
 import {
   ArrowLeft,
   ChevronRight,
@@ -47,10 +46,12 @@ const REGION_MAP: Record<RegionId, string[]> = {
   MN: ["MN", "NAM", "XSMN"],
 };
 
-// 5 danh mục dự đoán
+// Đủ 7 danh mục dự đoán theo chuẩn thuật toán Decay
 const PREDICTION_TYPES = [
   { id: "bao_2", title: "Bao Lô 2 Số", mockNums: "48 - 92 - 15" },
   { id: "bao_3", title: "Bao Lô 3 Số", mockNums: "348 - 792 - 115" },
+  { id: "xien_2", title: "Xiên 2", mockNums: "48, 92" },
+  { id: "xien_3", title: "Xiên 3", mockNums: "48, 92, 15" },
   { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
   { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
   { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
@@ -99,9 +100,6 @@ function App() {
   // Trạng thái mở khóa khi bấm nút "Xem"
   const [unlockedItems, setUnlockedItems] = useState<Record<string, boolean>>({});
 
-  // Lưu trữ kết quả quay thưởng riêng cho từng đài trong Miền
-  const [stationDrawsMap, setStationDrawsMap] = useState<Record<string, any[]>>({});
-
   const app = useAppData();
 
   // Chọn đài và kích hoạt kéo 50 kỳ quay từ CSDL
@@ -125,7 +123,7 @@ function App() {
     }
   }, [selectedStation, app.draws]);
 
-  // Hàm trả về chuỗi số hiển thị (hoặc trạng thái chờ)
+  // Hàm trả về chuỗi số hiển thị (hoặc trạng thái chờ) cho 7 mục dự đoán
   const getPredictionValue = (typeId: string, mockNums: string) => {
     if (!selectedStation) return mockNums;
 
@@ -141,6 +139,10 @@ function App() {
         return realPredictions.baoLo2D?.join(" - ") || "Chưa có";
       case "bao_3":
         return realPredictions.baoLo3D?.join(" - ") || "Chưa có";
+      case "xien_2":
+        return realPredictions.xien2?.join(", ") || "Chưa có";
+      case "xien_3":
+        return realPredictions.xien3?.join(", ") || "Chưa có";
       case "xien_truot":
         return realPredictions.xienTruot?.join(", ") || "Chưa có";
       case "dau_duoi":
@@ -152,59 +154,11 @@ function App() {
     }
   };
 
-  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
-  const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
-  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
-    allowedRegions.includes(s.region)
-  );
-
-  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
-  let stationsInRegion = (app.stations || []).filter((s) => {
-    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
-    const isScheduled = scheduledForToday.some(
-      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
-    );
-    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
-  });
-
-  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
-  if (stationsInRegion.length === 0) {
-    stationsInRegion = scheduledForToday.map((s) => ({
-      id: s.id,
-      name: s.name,
-      time: s.drawTime,
-      region: selectedRegion,
-    })) as any;
-  }
-
-  // Tự động tải kết quả quay thưởng của TẤT CẢ các đài thuộc miền đang chọn
-  useEffect(() => {
-    if (stationsInRegion.length > 0) {
-      stationsInRegion.forEach(async (st) => {
-        try {
-          const d = await fetchDraws(st.id);
-          if (d && d.length > 0) {
-            setStationDrawsMap((prev) => ({ ...prev, [st.id]: d }));
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      });
-      if (!selectedStation) {
-        handleSelectStation(stationsInRegion[0]);
-      }
-    }
-  }, [selectedRegion, stationsInRegion]);
-
   // Tính Tỷ Lệ Trúng Dự Đoán (%) thực tế dựa trên kỳ mở thưởng gần nhất
   const hitRateStats = useMemo(() => {
-    const activeDraws = (selectedStation && app.draws.length > 0)
-      ? app.draws
-      : (stationsInRegion.length > 0 && stationDrawsMap[stationsInRegion[0]?.id] ? stationDrawsMap[stationsInRegion[0]?.id] : app.draws);
-
-    if (!activeDraws || activeDraws.length < 2) return { rate: "82.5%", hits: 4, total: 5 };
-    const latestDraw = activeDraws[0];
-    const pastDraws = activeDraws.slice(1);
+    if (!app.draws || app.draws.length < 2) return { rate: "82.5%", hits: 4, total: 5 };
+    const latestDraw = app.draws[0];
+    const pastDraws = app.draws.slice(1);
 
     try {
       const preds = generatePredictionsFromDecay(pastDraws);
@@ -234,7 +188,7 @@ function App() {
     } catch {
       return { rate: "80.0%", hits: 4, total: 5 };
     }
-  }, [app.draws, selectedStation, stationsInRegion, stationDrawsMap]);
+  }, [app.draws]);
 
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
@@ -246,6 +200,33 @@ function App() {
   };
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
+
+  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
+  const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
+  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
+    allowedRegions.includes(s.region)
+  );
+
+  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
+  let stationsInRegion = (app.stations || []).filter((s) => {
+    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
+    const isScheduled = scheduledForToday.some(
+      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
+    );
+    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
+  });
+
+  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
+  if (stationsInRegion.length === 0) {
+    stationsInRegion = scheduledForToday.map((s) => ({
+      id: s.id,
+      name: s.name,
+      time: s.drawTime,
+      region: selectedRegion,
+    })) as any;
+  }
+
+  const latestDraw = app.draws && app.draws.length > 0 ? app.draws[0] : null;
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
@@ -354,7 +335,7 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  /* BƯỚC 2: Màn hình 5 mục dự đoán che mờ + Nút "Xem" */
+                  /* BƯỚC 2: Màn hình 7 mục dự đoán che mờ + Nút "Xem" */
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
                       <button
@@ -371,7 +352,7 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Danh sách 5 mục dự đoán */}
+                    {/* Danh sách 7 mục dự đoán */}
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
                         const isUnlocked = unlockedItems[item.id];
@@ -460,50 +441,42 @@ function App() {
                   </div>
                 </div>
 
-                {/* Bảng kết quả hiển thị ĐỦ TẤT CẢ CÁC ĐÀI mở thưởng trong ngày của Miền đó */}
-                <div className="space-y-4">
-                  {stationsInRegion.map((st) => {
-                    const stDraws = stationDrawsMap[st.id] || (selectedStation?.id === st.id ? app.draws : []);
-                    const stLatest = stDraws && stDraws.length > 0 ? stDraws[0] : null;
+                {/* Bảng kết quả xổ số thật từ CSDL Supabase */}
+                <div className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3">
+                  <div className="text-center pb-2 border-b border-white/5">
+                    <h3 className="text-base font-bold text-sky-300">
+                      {selectedStation ? selectedStation.name : "Xổ Số " + (REGION_LABELS[selectedRegion] || selectedRegion)}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Kỳ mở thưởng: {latestDraw?.draw_date || "Mới nhất"}
+                    </p>
+                  </div>
 
-                    return (
-                      <div key={st.id} className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3">
-                        <div className="text-center pb-2 border-b border-white/5">
-                          <h3 className="text-base font-bold text-sky-300">{st.name}</h3>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            Kỳ mở thưởng: {stLatest?.draw_date || "Mới nhất"} (Giờ quay: {st.time || "17:15"})
-                          </p>
-                        </div>
+                  <div className="space-y-2 text-xs sm:text-sm">
+                    <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                      <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
+                      <span className="font-mono font-bold text-base text-amber-200">
+                        {latestDraw?.special_prize || "Đang kết nối..."}
+                      </span>
+                    </div>
 
-                        <div className="space-y-2 text-xs sm:text-sm">
-                          <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                            <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
-                            <span className="font-mono font-bold text-base text-amber-200">
-                              {stLatest?.special_prize || "Đang kết nối..."}
-                            </span>
-                          </div>
+                    <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
+                      <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
+                      <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
+                        {latestDraw?.lo_numbers?.length ? latestDraw.lo_numbers.join(" - ") : "Đang kết nối..."}
+                      </span>
+                    </div>
 
-                          <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                            <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
-                            <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
-                              {stLatest?.lo_numbers?.length ? stLatest.lo_numbers.join(" - ") : "Đang kết nối..."}
-                            </span>
-                          </div>
-
-                          {stLatest?.seventh_or_eighth && (
-                            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                              <span className="text-slate-400">Giải 7 / Giải 8</span>
-                              <span className="font-mono font-semibold text-sky-300">
-                                {stLatest.seventh_or_eighth.join(" - ")}
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                    {latestDraw?.seventh_or_eighth && (
+                      <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
+                        <span className="text-slate-400">Giải 7 / Giải 8</span>
+                        <span className="font-mono font-semibold text-sky-300">
+                          {latestDraw.seventh_or_eighth.join(" - ")}
+                        </span>
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
-
               </div>
             )}
 
