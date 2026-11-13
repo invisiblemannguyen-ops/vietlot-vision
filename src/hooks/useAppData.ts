@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Station, DrawResult } from "@/lib/supabase";
+import type { LotteryStation } from "@/lib/supabase";
 import {
   fetchStations,
   fetchDraws,
@@ -8,11 +8,12 @@ import {
   generateAndSavePredictions,
   runAutoTune,
 } from "@/lib/data";
+import type { LotteryDraw } from "@/lib/supabase";
 
 export interface AppData {
-  stations: Station[];
-  selectedStation: Station | null;
-  draws: DrawResult[];
+  stations: LotteryStation[];
+  selectedStation: LotteryStation | null;
+  draws: LotteryDraw[];
   loading: boolean;
   error: string | null;
   selecting: boolean;
@@ -27,9 +28,9 @@ export interface AppData {
 }
 
 export function useAppData(): AppData {
-  const [stations, setStations] = useState<Station[]>([]);
-  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
-  const [draws, setDraws] = useState<DrawResult[]>([]);
+  const [stations, setStations] = useState<LotteryStation[]>([]);
+  const [selectedStation, setSelectedStation] = useState<LotteryStation | null>(null);
+  const [draws, setDraws] = useState<LotteryDraw[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
@@ -55,7 +56,8 @@ export function useAppData(): AppData {
       await loadStations();
       setLoading(false);
     })();
-  }, [loadStations]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const selectStation = useCallback((id: string) => {
     setSelecting(true);
@@ -68,7 +70,7 @@ export function useAppData(): AppData {
           .eq("id", id)
           .maybeSingle();
         if (error) throw error;
-        const station = data as Station;
+        const station = data as LotteryStation;
         setSelectedStation(station);
         const d = await fetchDraws(id);
         setDraws(d);
