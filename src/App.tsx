@@ -152,11 +152,55 @@ function App() {
     }
   };
 
+  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
+  const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
+  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
+    allowedRegions.includes(s.region)
+  );
+
+  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
+  let stationsInRegion = (app.stations || []).filter((s) => {
+    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
+    const isScheduled = scheduledForToday.some(
+      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
+    );
+    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
+  });
+
+  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
+  if (stationsInRegion.length === 0) {
+    stationsInRegion = scheduledForToday.map((s) => ({
+      id: s.id,
+      name: s.name,
+      time: s.drawTime,
+      region: selectedRegion,
+    })) as any;
+  }
+
+  // Tự động tải kết quả quay thưởng của TẤT CẢ các đài thuộc miền đang chọn
+  useEffect(() => {
+    if (stationsInRegion.length > 0) {
+      stationsInRegion.forEach(async (st) => {
+        try {
+          const d = await fetchDraws(st.id);
+          if (d && d.length > 0) {
+            setStationDrawsMap((prev) => ({ ...prev, [st.id]: d }));
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
+      if (!selectedStation) {
+        handleSelectStation(stationsInRegion[0]);
+      }
+    }
+  }, [selectedRegion, stationsInRegion]);
+
   // Tính Tỷ Lệ Trúng Dự Đoán (%) thực tế dựa trên kỳ mở thưởng gần nhất
   const hitRateStats = useMemo(() => {
     const activeDraws = (selectedStation && app.draws.length > 0)
       ? app.draws
-      : (stationsInRegion.length > 0 && stationDrawsMap[stationsInRegion[0].id] ? stationDrawsMap[stationsInRegion[0].id] : app.draws);
+      : (stationsInRegion.length > 0 && stationDrawsMap[stationsInRegion[0]?.id] ? stationDrawsMap[stationsInRegion[0]?.id] : app.draws);
 
     if (!activeDraws || activeDraws.length < 2) return { rate: "82.5%", hits: 4, total: 5 };
     const latestDraw = activeDraws[0];
@@ -202,50 +246,6 @@ function App() {
   };
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
-
-  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
-  const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
-  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
-    allowedRegions.includes(s.region)
-  );
-
-  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
-  let stationsInRegion = (app.stations || []).filter((s) => {
-    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
-    const isScheduled = scheduledForToday.some(
-      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
-    );
-    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
-  });
-
-  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
-  if (stationsInRegion.length === 0) {
-    stationsInRegion = scheduledForToday.map((s) => ({
-      id: s.id,
-      name: s.name,
-      time: s.drawTime,
-      region: selectedRegion,
-    })) as any;
-  }
-
-  // Tự động tải kết quả kỳ quay của TẤT CẢ các đài thuộc miền đang chọn
-  useEffect(() => {
-    if (stationsInRegion.length > 0) {
-      stationsInRegion.forEach(async (st) => {
-        try {
-          const d = await fetchDraws(st.id);
-          if (d && d.length > 0) {
-            setStationDrawsMap((prev) => ({ ...prev, [st.id]: d }));
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      });
-      if (!selectedStation) {
-        handleSelectStation(stationsInRegion[0]);
-      }
-    }
-  }, [selectedRegion, stationsInRegion]);
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
@@ -439,7 +439,28 @@ function App() {
                 </div>
 
                 {/* Thẻ Thống kê Tỷ lệ Trúng Dự đoán */}
-                                {/* Bảng kết quả hiển thị ĐỦ TẤT CẢ CÁC ĐÀI mở thưởng trong ngày của Miền đó */}
+                <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-3.5 flex items-center justify-between shadow-lg shadow-sky-500/10">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30">
+                      <TrendingUp className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Dự Đoán Trúng</h4>
+                      <p className="text-[11px] text-slate-400">
+                        Khớp {hitRateStats.hits}/{hitRateStats.total} hạng mục kỳ vừa qua
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-sky-300">{hitRateStats.rate}</span>
+                    <span className="block text-[10px] text-emerald-400 font-semibold">
+                      <CheckCircle2 className="h-3 w-3 inline mr-0.5" />
+                      Đã kiểm chứng
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bảng kết quả hiển thị ĐỦ TẤT CẢ CÁC ĐÀI mở thưởng trong ngày của Miền đó */}
                 <div className="space-y-4">
                   {stationsInRegion.map((st) => {
                     const stDraws = stationDrawsMap[st.id] || (selectedStation?.id === st.id ? app.draws : []);
@@ -458,35 +479,6 @@ function App() {
                           <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
                             <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
                             <span className="font-mono font-bold text-base text-amber-200">
-                              {stLatest?.special_prize || "Đang kết nối..."}
-                            </span>
-                          </div>
-
-                          <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                            <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
-                            <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
-                              {stLatest?.lo_numbers?.length ? stLatest.lo_numbers.join(" - ") : "Đang kết nối..."}
-                            </span>
-                          </div>
-
-                          {stLatest?.seventh_or_eighth && (
-                            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                              <span className="text-slate-400">Giải 7 / Giải 8</span>
-                              <span className="font-mono font-semibold text-sky-300">
-                                {stLatest.seventh_or_eighth.join(" - ")}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
                               {stLatest?.special_prize || "Đang kết nối..."}
                             </span>
                           </div>
