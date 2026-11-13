@@ -4,6 +4,7 @@ import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
 import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
+import { SCHEDULE_BY_DAY } from "@/lib/schedule";
 import {
   ArrowLeft,
   ChevronRight,
@@ -194,14 +195,29 @@ function App() {
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
 
-  // Lấy đài theo Miền (có bộ lọc dự phòng)
+  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
   const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
-  let stationsInRegion = (app.stations || []).filter(
-    (s) => allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase())
+  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
+    allowedRegions.includes(s.region)
   );
 
+  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
+  let stationsInRegion = (app.stations || []).filter((s) => {
+    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
+    const isScheduled = scheduledForToday.some(
+      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
+    );
+    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
+  });
+
+  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
   if (stationsInRegion.length === 0) {
-    stationsInRegion = DEFAULT_STATIONS[selectedRegion] as any;
+    stationsInRegion = scheduledForToday.map((s) => ({
+      id: s.id,
+      name: s.name,
+      time: s.drawTime,
+      region: selectedRegion,
+    })) as any;
   }
 
   const latestDraw = app.draws && app.draws.length > 0 ? app.draws : null;
