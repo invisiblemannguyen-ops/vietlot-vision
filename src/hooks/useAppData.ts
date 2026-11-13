@@ -43,7 +43,7 @@ export function useAppData(): AppData {
       const s = await fetchStations();
       setStations(s);
       if (s.length > 0 && !selectedStation) {
-        setSelectedStation(s[0]);
+        setSelectedStation(s);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load stations");
