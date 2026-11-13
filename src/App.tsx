@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Sidebar, type RegionId } from "@/components/Sidebar";
 import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
+import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
 import {
   ArrowLeft,
   ChevronRight,
@@ -35,20 +36,20 @@ const DEFAULT_STATIONS: Record<
   ],
 };
 
-// Ánh xạ mã miền giữa Giao diện ('MB', 'MT', 'MN') và CSDL Supabase ('BAC', 'TRUNG', 'NAM' / 'XSMB', 'XSMT', 'XSMN')
+// Ánh xạ mã miền giữa Giao diện ('MB', 'MT', 'MN') và CSDL ('BAC', 'TRUNG', 'NAM' / 'XSMB', 'XSMT', 'XSMN')
 const REGION_MAP: Record<RegionId, string[]> = {
   MB: ["MB", "BAC", "XSMB"],
   MT: ["MT", "TRUNG", "XSMT"],
   MN: ["MN", "NAM", "XSMN"],
 };
 
-// 5 danh mục dự đoán bị che mờ
+// 5 danh mục dự đoán
 const PREDICTION_TYPES = [
-  { id: "bao_2", title: "Bao Lô 2 Số", mockNums: "48 - 92 - 15" },
-  { id: "bao_3", title: "Bao Lô 3 Số", mockNums: "348 - 792 - 115" },
-  { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
-  { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
-  { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
+  { id: "bao_2", title: "Bao Lô 2 Số" },
+  { id: "bao_3", title: "Bao Lô 3 Số" },
+  { id: "xien_truot", title: "Xiên Trượt" },
+  { id: "dau_duoi", title: "Đầu Đuôi" },
+  { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)" },
 ];
 
 const WEEKDAYS = ["Tất cả", "Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
@@ -66,9 +67,46 @@ function App() {
 
   const app = useAppData();
 
+  // Tính toán số dự đoán thật từ 50 kỳ quay trong CSDL
+  const realPredictions = useMemo(() => {
+    if (!selectedStation || !app.draws || app.draws.length === 0) return null;
+    try {
+      return generatePredictionsFromDecay(app.draws);
+    } catch {
+      return null;
+    }
+  }, [selectedStation, app.draws]);
+
+  // Lấy chuỗi số hiển thị theo từng loại dự đoán
+  const getPredictionValue = (typeId: string) => {
+    if (!realPredictions) return "Chưa có dữ liệu kỳ quay";
+
+    switch (typeId) {
+      case "bao_2":
+        return realPredictions.baoLo2D?.join(" - ") || "Chưa có";
+      case "bao_3":
+        return realPredictions.baoLo3D?.join(" - ") || "Chưa có";
+      case "xien_truot":
+        return realPredictions.xienTruot?.join(", ") || "Chưa có";
+      case "dau_duoi":
+        return realPredictions.dauDuoi?.join(" - ") || "Chưa có";
+      case "doc_dac":
+        return realPredictions.docDac?.join(" - ") || "Chưa có";
+      default:
+        return "Chưa có";
+    }
+  };
+
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
     setSelectedStation(null); // Trở về danh sách đài khi đổi miền
+  };
+
+  const handleSelectStation = (st: any) => {
+    setSelectedStation(st);
+    if (app.selectStation) {
+      app.selectStation(st.id);
+    }
   };
 
   const handleUnlock = (typeId: string) => {
@@ -162,7 +200,7 @@ function App() {
                       {stationsInRegion.map((st) => (
                         <button
                           key={st.id}
-                          onClick={() => setSelectedStation(st)}
+                          onClick={() => handleSelectStation(st)}
                           className="group flex items-center justify-between rounded-2xl border border-white/10 bg-gradient-to-r from-slate-900/90 to-slate-900/50 p-3.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
                         >
                           <div className="flex items-center gap-3">
@@ -210,6 +248,7 @@ function App() {
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
                         const isUnlocked = unlockedItems[item.id];
+                        const predictionText = getPredictionValue(item.id);
 
                         return (
                           <div
@@ -237,7 +276,7 @@ function App() {
                                     : "text-slate-600 blur-md select-none pointer-events-none"
                                 }`}
                               >
-                                {item.mockNums}
+                                {predictionText}
                               </div>
 
                               {!isUnlocked && (
@@ -284,19 +323,15 @@ function App() {
                   <div className="space-y-2 text-xs sm:text-sm">
                     <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
                       <span className="font-bold text-amber-300">Đặc Biệt</span>
-                      <span className="font-mono font-bold text-base text-amber-200">58294</span>
+                      <span className="font-mono font-bold text-base text-amber-200">
+                        {app.draws?.[0]?.special_prize || "Đang cập nhật"}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                      <span className="text-slate-400">Giải Nhất</span>
-                      <span className="font-mono font-semibold text-white">49102</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                      <span className="text-slate-400">Giải Nhì</span>
-                      <span className="font-mono font-semibold text-white">73819 - 84920</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                      <span className="text-slate-400">Giải Ba</span>
-                      <span className="font-mono font-semibold text-white">10293 - 48291 - 39102</span>
+                      <span className="text-slate-400">Các Lô Mới Nhất</span>
+                      <span className="font-mono font-semibold text-white">
+                        {app.draws?.[0]?.lo_numbers?.slice(0, 5).join(" - ") || "Đang cập nhật"}
+                      </span>
                     </div>
                   </div>
                 </div>
