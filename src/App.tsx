@@ -101,13 +101,13 @@ function App() {
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
-  <span className="text-amber-300 text-base sm:text-lg font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-lg border border-amber-400/50 shadow-md shadow-rose-500/30">
-  AI
-</span>
-<span className="font-bold text-sm sm:text-base text-white">
-  Soi Cầu 3 Miền
-</span>
-</div>
+              <span className="text-amber-300 text-base sm:text-lg font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-lg border border-amber-400/50 shadow-md shadow-rose-500/30">
+                AI
+              </span>
+              <span className="font-bold text-sm sm:text-base text-white">
+                Soi Cầu 3 Miền
+              </span>
+            </div>
             <span className="text-xs text-sky-400 font-semibold">
               [{REGION_LABELS[selectedRegion] || selectedRegion}]
             </span>
