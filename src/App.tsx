@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Sidebar, type RegionId } from "@/components/Sidebar";
 import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
@@ -221,7 +221,11 @@ function App() {
   }
 
   const latestDraw = app.draws && app.draws.length > 0 ? app.draws[0] : null;
-
+useEffect(() => {
+  if (stationsInRegion.length > 0 && !selectedStation) {
+    handleSelectStation(stationsInRegion[0]);
+  }
+}, [selectedRegion, stationsInRegion]);
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
       {/* Cột Menu 3 Miền bên trái */}
@@ -435,44 +439,43 @@ function App() {
                   </div>
                 </div>
 
-                {/* Bảng kết quả xổ số thật từ CSDL Supabase */}
-                <div className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3">
-                  <div className="text-center pb-2 border-b border-white/5">
-                    <h3 className="text-base font-bold text-sky-300">
-                      {selectedStation ? selectedStation.name : "Xổ Số " + (REGION_LABELS[selectedRegion] || selectedRegion)}
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Kỳ mở thưởng: {latestDraw?.draw_date || "Mới nhất"}
-                    </p>
-                  </div>
+                <div className="space-y-4">
+  {stationsInRegion.map((st) => (
+    <div key={st.id} className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3">
+      <div className="text-center pb-2 border-b border-white/5">
+        <h3 className="text-base font-bold text-sky-300">{st.name}</h3>
+        <p className="text-[11px] text-slate-400 mt-0.5">
+          Giờ quay: {st.time || "17:15"}
+        </p>
+      </div>
 
-                  <div className="space-y-2 text-xs sm:text-sm">
-                    <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                      <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
-                      <span className="font-mono font-bold text-base text-amber-200">
-                        {latestDraw?.special_prize || "Đang kết nối..."}
-                      </span>
-                    </div>
+      <div className="space-y-2 text-xs sm:text-sm">
+        <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+          <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
+          <span className="font-mono font-bold text-base text-amber-200">
+            {latestDraw?.special_prize || "Đang kết nối..."}
+          </span>
+        </div>
 
-                    <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                      <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
-                      <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
-                        {latestDraw?.lo_numbers?.length ? latestDraw.lo_numbers.join(" - ") : "Đang kết nối..."}
-                      </span>
-                    </div>
+        <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
+          <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
+          <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
+            {latestDraw?.lo_numbers?.length ? latestDraw.lo_numbers.join(" - ") : "Đang kết nối..."}
+          </span>
+        </div>
 
-                    {latestDraw?.seventh_or_eighth && (
-                      <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-                        <span className="text-slate-400">Giải 7 / Giải 8</span>
-                        <span className="font-mono font-semibold text-sky-300">
-                          {latestDraw.seventh_or_eighth.join(" - ")}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+        {latestDraw?.seventh_or_eighth && (
+          <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
+            <span className="text-slate-400">Giải 7 / Giải 8</span>
+            <span className="font-mono font-semibold text-sky-300">
+              {latestDraw.seventh_or_eighth.join(" - ")}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  ))}
+</div>
 
           </div>
         </div>
