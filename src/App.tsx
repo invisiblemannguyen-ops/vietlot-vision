@@ -151,7 +151,7 @@ function App() {
   // Tính Tỷ Lệ Trúng Dự Đoán (%) thực tế dựa trên kỳ mở thưởng gần nhất
   const hitRateStats = useMemo(() => {
     if (!app.draws || app.draws.length < 2) return { rate: "82.5%", hits: 4, total: 5 };
-    const latestDraw = app.draws;
+    const latestDraw = app.draws[0];
     const pastDraws = app.draws.slice(1);
 
     try {
@@ -220,7 +220,7 @@ function App() {
     })) as any;
   }
 
-  const latestDraw = app.draws && app.draws.length > 0 ? app.draws : null;
+  const latestDraw = app.draws && app.draws.length > 0 ? app.draws[0] : null;
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
