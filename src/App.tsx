@@ -5,6 +5,7 @@ import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
 import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
 import { SCHEDULE_BY_DAY } from "@/lib/schedule";
+import { fetchDraws } from "@/lib/data";
 import {
   ArrowLeft,
   ChevronRight,
@@ -98,6 +99,9 @@ function App() {
   // Trạng thái mở khóa khi bấm nút "Xem"
   const [unlockedItems, setUnlockedItems] = useState<Record<string, boolean>>({});
 
+  // Lưu trữ kết quả quay thưởng riêng cho từng đài trong Miền
+  const [stationDrawsMap, setStationDrawsMap] = useState<Record<string, any[]>>({});
+
   const app = useAppData();
 
   // Chọn đài và kích hoạt kéo 50 kỳ quay từ CSDL
@@ -150,9 +154,13 @@ function App() {
 
   // Tính Tỷ Lệ Trúng Dự Đoán (%) thực tế dựa trên kỳ mở thưởng gần nhất
   const hitRateStats = useMemo(() => {
-    if (!app.draws || app.draws.length < 2) return { rate: "82.5%", hits: 4, total: 5 };
-    const latestDraw = app.draws[0];
-    const pastDraws = app.draws.slice(1);
+    const activeDraws = (selectedStation && app.draws.length > 0)
+      ? app.draws
+      : (stationsInRegion.length > 0 && stationDrawsMap[stationsInRegion[0].id] ? stationDrawsMap[stationsInRegion[0].id] : app.draws);
+
+    if (!activeDraws || activeDraws.length < 2) return { rate: "82.5%", hits: 4, total: 5 };
+    const latestDraw = activeDraws[0];
+    const pastDraws = activeDraws.slice(1);
 
     try {
       const preds = generatePredictionsFromDecay(pastDraws);
@@ -182,7 +190,7 @@ function App() {
     } catch {
       return { rate: "80.0%", hits: 4, total: 5 };
     }
-  }, [app.draws]);
+  }, [app.draws, selectedStation, stationsInRegion, stationDrawsMap]);
 
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
@@ -220,12 +228,25 @@ function App() {
     })) as any;
   }
 
-  const latestDraw = app.draws && app.draws.length > 0 ? app.draws[0] : null;
-useEffect(() => {
-  if (stationsInRegion.length > 0 && !selectedStation) {
-    handleSelectStation(stationsInRegion[0]);
-  }
-}, [selectedRegion, stationsInRegion]);
+  // Tự động tải kết quả kỳ quay của TẤT CẢ các đài thuộc miền đang chọn
+  useEffect(() => {
+    if (stationsInRegion.length > 0) {
+      stationsInRegion.forEach(async (st) => {
+        try {
+          const d = await fetchDraws(st.id);
+          if (d && d.length > 0) {
+            setStationDrawsMap((prev) => ({ ...prev, [st.id]: d }));
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
+      if (!selectedStation) {
+        handleSelectStation(stationsInRegion[0]);
+      }
+    }
+  }, [selectedRegion, stationsInRegion]);
+
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
       {/* Cột Menu 3 Miền bên trái */}
@@ -439,43 +460,52 @@ useEffect(() => {
                   </div>
                 </div>
 
+                {/* Bảng kết quả hiển thị ĐỦ TẤT CẢ CÁC ĐÀI mở thưởng trong ngày của Miền đó */}
                 <div className="space-y-4">
-  {stationsInRegion.map((st) => (
-    <div key={st.id} className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3">
-      <div className="text-center pb-2 border-b border-white/5">
-        <h3 className="text-base font-bold text-sky-300">{st.name}</h3>
-        <p className="text-[11px] text-slate-400 mt-0.5">
-          Giờ quay: {st.time || "17:15"}
-        </p>
-      </div>
+                  {stationsInRegion.map((st) => {
+                    const stDraws = stationDrawsMap[st.id] || (selectedStation?.id === st.id ? app.draws : []);
+                    const stLatest = stDraws.length > 0 ? stDraws[0] : null;
 
-      <div className="space-y-2 text-xs sm:text-sm">
-        <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
-          <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
-          <span className="font-mono font-bold text-base text-amber-200">
-            {latestDraw?.special_prize || "Đang kết nối..."}
-          </span>
-        </div>
+                    return (
+                      <div key={st.id} className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3">
+                        <div className="text-center pb-2 border-b border-white/5">
+                          <h3 className="text-base font-bold text-sky-300">{st.name}</h3>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Kỳ mở thưởng: {stLatest?.draw_date || "Mới nhất"} (Giờ quay: {st.time || "17:15"})
+                          </p>
+                        </div>
 
-        <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-          <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
-          <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
-            {latestDraw?.lo_numbers?.length ? latestDraw.lo_numbers.join(" - ") : "Đang kết nối..."}
-          </span>
-        </div>
+                        <div className="space-y-2 text-xs sm:text-sm">
+                          <div className="flex justify-between items-center p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                            <span className="font-bold text-amber-300">Giải Đặc Biệt</span>
+                            <span className="font-mono font-bold text-base text-amber-200">
+                              {stLatest?.special_prize || "Đang kết nối..."}
+                            </span>
+                          </div>
 
-        {latestDraw?.seventh_or_eighth && (
-          <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
-            <span className="text-slate-400">Giải 7 / Giải 8</span>
-            <span className="font-mono font-semibold text-sky-300">
-              {latestDraw.seventh_or_eighth.join(" - ")}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  ))}
-</div>
+                          <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
+                            <span className="text-slate-400">Các Số Lô Mở Thưởng</span>
+                            <span className="font-mono font-semibold text-white tracking-wide text-right max-w-[200px] truncate">
+                              {stLatest?.lo_numbers?.length ? stLatest.lo_numbers.join(" - ") : "Đang kết nối..."}
+                            </span>
+                          </div>
+
+                          {stLatest?.seventh_or_eighth && (
+                            <div className="flex justify-between items-center p-2.5 rounded-lg bg-white/5">
+                              <span className="text-slate-400">Giải 7 / Giải 8</span>
+                              <span className="font-mono font-semibold text-sky-300">
+                                {stLatest.seventh_or_eighth.join(" - ")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+              </div>
+            )}
 
           </div>
         </div>
