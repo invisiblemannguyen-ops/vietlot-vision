@@ -5,6 +5,8 @@ import { FullPageLoader } from "@/components/Feedback";
 import { REGION_LABELS } from "@/lib/constants";
 import { generatePredictionsFromDecay } from "@/lib/decayAlgorithm";
 import { SCHEDULE_BY_DAY } from "@/lib/schedule";
+import { fetchDraws } from "@/lib/data";
+import type { LotteryDraw } from "@/lib/supabase";
 import {
   ArrowLeft,
   ChevronRight,
@@ -15,31 +17,9 @@ import {
   Calendar,
   Clock,
   Star,
-  TrendingUp,
-  CheckCircle2,
 } from "lucide-react";
 
-// Dữ liệu đài mặc định dự phòng
-const DEFAULT_STATIONS: Record<
-  RegionId,
-  Array<{ id: string; name: string; time: string; region: RegionId }>
-> = {
-  MB: [
-    { id: "mb", name: "Miền Bắc", time: "18:15", region: "MB" },
-  ],
-  MT: [
-    { id: "qb", name: "Quảng Bình", time: "17:15", region: "MT" },
-    { id: "bd", name: "Bình Định", time: "17:15", region: "MT" },
-    { id: "qt", name: "Quảng Trị", time: "17:15", region: "MT" },
-  ],
-  MN: [
-    { id: "bt", name: "Bình Thuận", time: "17:15", region: "MN" },
-    { id: "ag", name: "An Giang", time: "17:15", region: "MN" },
-    { id: "tn", name: "Tây Ninh", time: "17:15", region: "MN" },
-  ],
-};
-
-// Ánh xạ mã miền giữa Giao diện ('MB', 'MT', 'MN') và CSDL Supabase ('BAC', 'TRUNG', 'NAM' / 'XSMB', 'XSMT', 'XSMN')
+// Ánh xạ mã miền giữa Giao diện ('MB', 'MT', 'MN') và CSDL Supabase
 const REGION_MAP: Record<RegionId, string[]> = {
   MB: ["MB", "BAC", "XSMB"],
   MT: ["MT", "TRUNG", "XSMT"],
@@ -59,24 +39,27 @@ const PREDICTION_TYPES = [
 
 const WEEKDAYS = ["Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
-// Hàm lấy tên Thứ hiện tại linh hoạt theo thời gian thực (0 = Chủ Nhật, ..., 6 = Thứ 7)
 const getTodayName = () => {
   const dayIdx = new Date().getDay();
   return WEEKDAYS[dayIdx];
 };
 
-// Hàm kiểm tra giờ tính toán tự động theo vùng miền
+const getYesterdayName = () => {
+  const dayIdx = (new Date().getDay() + 6) % 7;
+  return WEEKDAYS[dayIdx];
+};
+
 const checkCalculationTime = (region: string): { canCalculate: boolean; targetHour: number } => {
   const currentHour = new Date().getHours();
   const regUpper = (region || "").toUpperCase();
 
-  let targetHour = 17; // Mặc định Miền Bắc 17h
+  let targetHour = 17;
   if (["MN", "NAM", "XSMN"].includes(regUpper)) {
-    targetHour = 15; // Miền Nam 15h (3h chiều)
+    targetHour = 15; // Miền Nam 15h
   } else if (["MT", "TRUNG", "XSMT"].includes(regUpper)) {
-    targetHour = 16; // Miền Trung 16h (4h chiều)
+    targetHour = 16; // Miền Trung 16h
   } else if (["MB", "BAC", "XSMB"].includes(regUpper)) {
-    targetHour = 17; // Miền Bắc 17h (5h chiều)
+    targetHour = 17; // Miền Bắc 17h
   }
 
   return {
@@ -85,47 +68,54 @@ const checkCalculationTime = (region: string): { canCalculate: boolean; targetHo
   };
 };
 
-function App() {
+const normalizeStationId = (id: string) => {
+  const map: Record<string, string> = {
+    tphcm: "hcm",
+    hcm: "tphcm",
+    da_nang: "danang",
+    danang: "da_nang",
+    can_tho: "cantho",
+    cantho: "can_tho",
+    xsmb: "mb",
+    mb: "xsmb",
+  };
+  return map[id.toLowerCase()] || id;
+};
+
+export default function App() {
   const todayName = useMemo(() => getTodayName(), []);
+  const yesterdayName = useMemo(() => getYesterdayName(), []);
 
-  const [selectedRegion, setSelectedRegion] = useState<RegionId>("MT");
+  const [selectedRegion, setSelectedRegion] = useState<RegionId>("MN");
   const [selectedStation, setSelectedStation] = useState<{ id: string; name: string; region: string } | null>(null);
-  
-  // Thứ tự động nhảy và ĐỘNG KHÓA CỨNG theo ngày hôm nay
   const [selectedDay] = useState<string>(todayName);
-
-  // Tab dưới cùng: "home" (Trang Chủ) hoặc "results" (Kết Quả)
   const [activeTab, setActiveTab] = useState<"home" | "results">("home");
-
-  // Trạng thái mở khóa khi bấm nút "Xem" (Lưu theo ID đài + ID danh mục để không bị dính sang đài khác)
   const [unlockedItems, setUnlockedItems] = useState<Record<string, boolean>>({});
+
+  const [yesterdayDraws, setYesterdayDraws] = useState<Record<string, LotteryDraw | null>>({});
 
   const app = useAppData();
 
-  // Chọn đài và kích hoạt kéo 50 kỳ quay từ CSDL dùng cho thuật toán Decay
-  const handleSelectStation = (st: any) => {
-    setSelectedStation(st);
-    if (app.selectStation) {
-      app.selectStation(st.id);
-    }
-  };
-
-  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
   const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
   const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
     allowedRegions.includes(s.region)
   );
 
-  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
+  const scheduledForYesterday = (SCHEDULE_BY_DAY[yesterdayName] || []).filter((s) =>
+    allowedRegions.includes(s.region)
+  );
+
   let stationsInRegion = (app.stations || []).filter((s) => {
     const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
     const isScheduled = scheduledForToday.some(
-      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
+      (sc) =>
+        sc.id.toLowerCase() === s.id.toLowerCase() ||
+        normalizeStationId(sc.id) === normalizeStationId(s.id) ||
+        s.name.toLowerCase().includes(sc.name.toLowerCase())
     );
     return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
   });
 
-  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
   if (stationsInRegion.length === 0) {
     stationsInRegion = scheduledForToday.map((s) => ({
       id: s.id,
@@ -135,21 +125,34 @@ function App() {
     })) as any;
   }
 
-  // Tự động nạp đài đầu tiên của miền nếu chưa chọn đài
-  useEffect(() => {
-    if (stationsInRegion.length > 0 && !selectedStation && app.stations.length > 0) {
-      const firstSt = stationsInRegion[0];
-      setSelectedStation(firstSt);
-      if (app.selectStation) {
-        app.selectStation(firstSt.id);
-      }
+  const handleSelectStation = (st: any) => {
+    setSelectedStation(st);
+    const targetId = st.id || normalizeStationId(st.id);
+    if (app.selectStation) {
+      app.selectStation(targetId);
     }
-  }, [selectedRegion, stationsInRegion, selectedStation, app]);
+  };
 
-  // Dữ liệu 50 kỳ quay dùng để tính thuật toán Decay cho TAB TRANG CHỦ
+  useEffect(() => {
+    if (activeTab === "results") {
+      const stationsToFetch = scheduledForYesterday.length > 0 ? scheduledForYesterday : stationsInRegion;
+      stationsToFetch.forEach(async (st) => {
+        try {
+          const draws = await fetchDraws(st.id);
+          const normDraws = draws.length > 0 ? draws : await fetchDraws(normalizeStationId(st.id));
+          if (normDraws.length > 0) {
+            setYesterdayDraws((prev) => ({ ...prev, [st.id]: normDraws[0] }));
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
+    }
+  }, [activeTab, selectedRegion]);
+
   const realPredictions = useMemo(() => {
     if (!selectedStation || !app.draws || app.draws.length === 0) return null;
-    const { canCalculate } = checkCalculationTime(selectedStation.region);
+    const { canCalculate } = checkCalculationTime(selectedStation.region || selectedRegion);
     if (!canCalculate) return null;
 
     try {
@@ -157,15 +160,13 @@ function App() {
     } catch {
       return null;
     }
-  }, [selectedStation, app.draws]);
+  }, [selectedStation, selectedRegion, app.draws]);
 
-  // Giá trị số dự đoán ở Trang chủ
   const getPredictionValue = (typeId: string, mockNums: string) => {
     if (!selectedStation) return mockNums;
-
-    const { canCalculate, targetHour } = checkCalculationTime(selectedStation.region);
+    const { canCalculate, targetHour } = checkCalculationTime(selectedStation.region || selectedRegion);
     if (!canCalculate) {
-      return `Giữ trạng thái chờ (Tính tự động lúc ${targetHour}:00)`;
+      return "Giữ trạng thái chờ (Tính tự động lúc " + targetHour + ":00)";
     }
 
     if (!realPredictions) return "-";
@@ -190,48 +191,6 @@ function App() {
     }
   };
 
-  // Kỳ quay HÔM QUA (mới nhất đã xổ) dùng để hiển thị Bảng KQSX & tính ROI
-  const latestDraw = useMemo(() => {
-    return app.draws && app.draws.length > 0 ? app.draws[0] : null;
-  }, [app.draws]);
-
-  // Tính Tỷ Lệ Trúng AI (ROI) dựa trên kỳ quay hôm qua (latestDraw = app.draws[0]) so với dự đoán
-  const hitRateStats = useMemo(() => {
-    if (!app.draws || app.draws.length < 2) {
-      return { rate: "80.0%", hits: 4, total: 5, date: latestDraw?.draw_date || "Kỳ gần nhất" };
-    }
-    const pastDraws = app.draws.slice(1);
-
-    try {
-      const preds = generatePredictionsFromDecay(pastDraws);
-      const winningSet = new Set(latestDraw?.lo_numbers || []);
-      
-      let hits = 0;
-      let total = 0;
-
-      preds.baoLo2D?.forEach((n) => {
-        total++;
-        if (winningSet.has(n)) hits++;
-      });
-
-      preds.dauDuoi?.forEach((n) => {
-        total++;
-        if (winningSet.has(n) || (latestDraw?.special_prize && latestDraw.special_prize.endsWith(n))) hits++;
-      });
-
-      preds.docDac?.forEach((n) => {
-        total++;
-        if (latestDraw?.special_prize && latestDraw.special_prize.endsWith(n)) hits++;
-      });
-
-      if (total === 0) return { rate: "80.0%", hits: 4, total: 5, date: latestDraw?.draw_date || "Kỳ gần nhất" };
-      const percentage = ((hits / total) * 100).toFixed(1);
-      return { rate: `${percentage}%`, hits, total, date: latestDraw?.draw_date || "Kỳ gần nhất" };
-    } catch {
-      return { rate: "80.0%", hits: 4, total: 5, date: latestDraw?.draw_date || "Kỳ gần nhất" };
-    }
-  }, [app.draws, latestDraw]);
-
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
     setSelectedStation(null);
@@ -239,20 +198,18 @@ function App() {
 
   const handleUnlock = (typeId: string) => {
     if (!selectedStation) return;
-    const itemKey = `${selectedStation.id}_${typeId}`;
+    const itemKey = selectedStation.id + "_" + typeId;
     setUnlockedItems((prev) => ({ ...prev, [itemKey]: true }));
   };
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
 
   const isMB = selectedRegion === "MB";
+  const stationsForResults = scheduledForYesterday.length > 0 ? scheduledForYesterday : stationsInRegion;
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
-      <Sidebar
-        selectedRegion={selectedRegion}
-        onSelectRegion={handleSelectRegion}
-      />
+      <Sidebar selectedRegion={selectedRegion} onSelectRegion={handleSelectRegion} />
 
       <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
@@ -261,9 +218,7 @@ function App() {
               <span className="text-amber-300 text-base sm:text-lg font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-lg border border-amber-400/50 shadow-md shadow-rose-500/30">
                 AI
               </span>
-              <span className="font-bold text-sm sm:text-base text-white">
-                Soi Cầu 3 Miền
-              </span>
+              <span className="font-bold text-sm sm:text-base text-white">Soi Cầu 3 Miền</span>
             </div>
             <span className="text-xs text-sky-400 font-semibold">
               [{REGION_LABELS[selectedRegion] || selectedRegion}]
@@ -304,7 +259,7 @@ function App() {
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20">
           <div className="mx-auto w-full max-w-2xl space-y-4">
 
-            {/* TAB 1: TRANG CHỦ (Dự đoán) */}
+            {/* TAB 1: TRANG CHỦ */}
             {activeTab === "home" && (
               <>
                 {!selectedStation ? (
@@ -334,7 +289,7 @@ function App() {
                               </h3>
                               <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                                 <Clock className="h-3 w-3 text-slate-400" />
-                                <span>Giờ quay: {st.time || "17:15"}</span>
+                                <span>Giờ quay: {st.time || "16:15"}</span>
                               </p>
                             </div>
                           </div>
@@ -366,7 +321,7 @@ function App() {
 
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
-                        const itemKey = selectedStation ? `${selectedStation.id}_${item.id}` : item.id;
+                        const itemKey = selectedStation.id + "_" + item.id;
                         const isUnlocked = unlockedItems[itemKey];
                         const displayNums = getPredictionValue(item.id, item.mockNums);
 
@@ -381,9 +336,7 @@ function App() {
                                 {item.title}
                               </h3>
                               {isUnlocked && (
-                                <span className="text-[11px] text-emerald-400 font-semibold">
-                                  ✓ Đã mở
-                                </span>
+                                <span className="text-[11px] text-emerald-400 font-semibold">✓ Đã mở</span>
                               )}
                             </div>
 
@@ -419,217 +372,193 @@ function App() {
               </>
             )}
 
-            {/* TAB 2: KẾT QUẢ XỔ SỐ CỦA KỲ QUAY HÔM QUA (27 Giải MB hoặc 18 Giải MT/MN) */}
+            {/* TAB 2: KẾT QUẢ XỔ SỐ CÁC ĐÀI MỞ THƯỞNG HÔM QUA (HIỂN THỊ ĐỦ CÁC BẢNG ĐÀI HÔM QUA) */}
             {activeTab === "results" && (
-              <div className="space-y-3">
+              <div className="space-y-5">
                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
                   <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-sky-400" />
-                    KẾT QUẢ KỲ TRƯỚC ({selectedStation ? selectedStation.name : REGION_LABELS[selectedRegion]})
+                    KẾT QUẢ CÁC ĐÀI HÔM QUA ({yesterdayName} - {REGION_LABELS[selectedRegion]})
                   </h2>
                   <span className="text-[11px] text-emerald-400 font-semibold">
-                    {isMB ? "27 Giải mở thưởng" : "18 Giải mở thưởng"}
+                    {stationsForResults.length} Đài mở thưởng
                   </span>
                 </div>
 
-                {/* Thẻ Thống kê Tỷ lệ Trúng AI (ROI) */}
-                <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-3.5 flex items-center justify-between shadow-lg shadow-sky-500/10">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30">
-                      <TrendingUp className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Dự Đoán Trúng (ROI)</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Khớp {hitRateStats.hits}/{hitRateStats.total} hạng mục (Kỳ ngày: <span className="text-amber-300 font-bold">{hitRateStats.date}</span>)
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-black text-sky-300">{hitRateStats.rate}</span>
-                    <span className="block text-[10px] text-emerald-400 font-semibold">
-                      <CheckCircle2 className="h-3 w-3 inline mr-0.5" />
-                      Đã kiểm chứng
-                    </span>
-                  </div>
-                </div>
+                {/* Duyệt qua TẤT CẢ các đài mở thưởng ngày hôm qua của Miền */}
+                {stationsForResults.map((st) => {
+                  const drawData = yesterdayDraws[st.id] || app.draws[0];
+                  return (
+                    <div
+                      key={st.id}
+                      className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3 shadow-xl backdrop-blur-md"
+                    >
+                      <div className="text-center pb-2 border-b border-white/5">
+                        <h3 className="text-base font-bold text-sky-300 uppercase tracking-wide">
+                          {st.name}
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Kỳ mở thưởng: <span className="text-amber-300 font-bold">{drawData?.draw_date || "Hôm qua"}</span>
+                        </p>
+                      </div>
 
-                {/* BẢNG KẾT QUẢ XỔ SỐ TRUYỀN THỐNG CHUẨN KỲ HÔM QUA (27 giải MB / 18 giải MN-MT) */}
-                <div className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3 shadow-xl backdrop-blur-md">
-                  <div className="text-center pb-2 border-b border-white/5">
-                    <h3 className="text-base font-bold text-sky-300 uppercase tracking-wide">
-                      {selectedStation ? selectedStation.name : "Xổ Số " + (REGION_LABELS[selectedRegion] || selectedRegion)}
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Ngày mở thưởng: <span className="text-amber-300 font-bold">{latestDraw?.draw_date || "-"}</span>
-                    </p>
-                  </div>
-
-                  {/* Bảng Kết Quả Xổ Số Grid Layout */}
-                  <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/60 text-slate-100 text-xs sm:text-sm font-semibold">
-                    {isMB ? (
-                      /* MIỀN BẮC: BẢNG 27 GIẢI */
-                      <table className="w-full border-collapse text-center">
-                        <tbody>
-                          <tr className="border-b border-white/10">
-                            <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
-                            <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
-                              {latestDraw?.special_prize || "-"}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
-                            <td className="p-2.5 font-bold text-white">
-                              {latestDraw?.lo_numbers?.[0] || "-"}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-2 gap-2 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[1] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[2] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[3] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[4] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[5] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[6] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[7] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[8] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-4 gap-1 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[9] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[10] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[11] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[12] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[13] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[14] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[15] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[16] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[17] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[18] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-3 gap-1 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[19] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[20] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[21] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-4 gap-1 font-bold text-sky-300">
-                                <span>{latestDraw?.seventh_or_eighth?.[0] || latestDraw?.lo_numbers?.[22] || "-"}</span>
-                                <span>{latestDraw?.seventh_or_eighth?.[1] || latestDraw?.lo_numbers?.[23] || "-"}</span>
-                                <span>{latestDraw?.seventh_or_eighth?.[2] || latestDraw?.lo_numbers?.[24] || "-"}</span>
-                                <span>{latestDraw?.seventh_or_eighth?.[3] || latestDraw?.lo_numbers?.[25] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    ) : (
-                      /* MIỀN TRUNG / MIỀN NAM: BẢNG 18 GIẢI (ĐẶC BIỆT ĐẾN GIẢI 8) */
-                      <table className="w-full border-collapse text-center">
-                        <tbody>
-                          <tr className="border-b border-white/10">
-                            <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tám</td>
-                            <td className="p-2.5 font-bold text-sky-300 text-base">
-                              {latestDraw?.seventh_or_eighth?.[0] || latestDraw?.lo_numbers?.[0] || "-"}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
-                            <td className="p-2.5 font-bold text-white">
-                              {latestDraw?.lo_numbers?.[1] || "-"}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-3 gap-1 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[2] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[3] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[4] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
-                            <td className="p-2.5 font-bold text-white">
-                              {latestDraw?.lo_numbers?.[5] || "-"}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-4 gap-y-1 gap-x-1 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[6] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[7] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[8] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[9] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[10] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[11] || "-"}</span>
-                                <span className="col-span-2">{latestDraw?.lo_numbers?.[12] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
-                            <td className="p-2.5">
-                              <div className="grid grid-cols-2 gap-2 font-bold text-white">
-                                <span>{latestDraw?.lo_numbers?.[13] || "-"}</span>
-                                <span>{latestDraw?.lo_numbers?.[14] || "-"}</span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
-                            <td className="p-2.5 font-bold text-white">
-                              {latestDraw?.lo_numbers?.[15] || "-"}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-white/10">
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
-                            <td className="p-2.5 font-bold text-white">
-                              {latestDraw?.lo_numbers?.[16] || "-"}
-                            </td>
-                          </tr>
-                          <tr>
-                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
-                            <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
-                              {latestDraw?.special_prize || "-"}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
+                      {/* Bảng Lưới 18 Giải (MN/MT) hoặc 27 Giải (MB) */}
+                      <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/60 text-slate-100 text-xs sm:text-sm font-semibold">
+                        {isMB ? (
+                          /* BẢNG MIỀN BẮC (27 GIẢI) */
+                          <table className="w-full border-collapse text-center">
+                            <tbody>
+                              <tr className="border-b border-white/10">
+                                <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
+                                <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
+                                  {drawData?.special_prize || "-"}
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
+                                <td className="p-2.5 font-bold text-white">{drawData?.lo_numbers?.[0] || "-"}</td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-2 gap-2 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[1] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[2] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[3] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[4] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[5] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[6] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[7] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[8] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-4 gap-1 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[9] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[10] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[11] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[12] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[13] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[14] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[15] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[16] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[17] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[18] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-3 gap-1 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[19] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[20] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[21] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-4 gap-1 font-bold text-sky-300">
+                                    <span>{drawData?.seventh_or_eighth?.[0] || drawData?.lo_numbers?.[22] || "-"}</span>
+                                    <span>{drawData?.seventh_or_eighth?.[1] || drawData?.lo_numbers?.[23] || "-"}</span>
+                                    <span>{drawData?.seventh_or_eighth?.[2] || drawData?.lo_numbers?.[24] || "-"}</span>
+                                    <span>{drawData?.seventh_or_eighth?.[3] || drawData?.lo_numbers?.[25] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        ) : (
+                          /* BẢNG MIỀN TRUNG / MIỀN NAM (18 GIẢI - TỪ ĐẶC BIỆT ĐẾN GIẢI 8) */
+                          <table className="w-full border-collapse text-center">
+                            <tbody>
+                              <tr className="border-b border-white/10">
+                                <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tám</td>
+                                <td className="p-2.5 font-bold text-sky-300 text-base">
+                                  {drawData?.seventh_or_eighth?.[0] || drawData?.lo_numbers?.[0] || "-"}
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
+                                <td className="p-2.5 font-bold text-white">{drawData?.lo_numbers?.[1] || "-"}</td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-3 gap-1 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[2] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[3] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[4] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
+                                <td className="p-2.5 font-bold text-white">{drawData?.lo_numbers?.[5] || "-"}</td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-4 gap-y-1 gap-x-1 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[6] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[7] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[8] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[9] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[10] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[11] || "-"}</span>
+                                    <span className="col-span-2">{drawData?.lo_numbers?.[12] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
+                                <td className="p-2.5">
+                                  <div className="grid grid-cols-2 gap-2 font-bold text-white">
+                                    <span>{drawData?.lo_numbers?.[13] || "-"}</span>
+                                    <span>{drawData?.lo_numbers?.[14] || "-"}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
+                                <td className="p-2.5 font-bold text-white">{drawData?.lo_numbers?.[15] || "-"}</td>
+                              </tr>
+                              <tr className="border-b border-white/10">
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
+                                <td className="p-2.5 font-bold text-white">{drawData?.lo_numbers?.[16] || "-"}</td>
+                              </tr>
+                              <tr>
+                                <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
+                                <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
+                                  {drawData?.special_prize || "-"}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -661,5 +590,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
