@@ -5,7 +5,7 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
-# Lấy thông tin cấu hình từ GitHub Secrets
+# Lấy cấu hình từ GitHub Secrets
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -16,7 +16,7 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# Ánh chiếu tên đài Minh Ngọc sang station_id trong Supabase
+# Ánh chiếu tên đài Minh Ngọc sang station_id chuẩn trong Supabase
 STATION_MAP = {
     # Miền Nam
     "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "Đồng Tháp": "DONGTHAP", "Cà Mau": "CAMAU",
@@ -34,7 +34,6 @@ STATION_MAP = {
 }
 
 def extract_2d_lo(prizes_raw):
-    """Trích xuất 2 số cuối của tất cả các giải"""
     lo_set = []
     for p in prizes_raw:
         clean_p = re.sub(r'\D', '', str(p))
@@ -44,8 +43,7 @@ def extract_2d_lo(prizes_raw):
 
 # ==================== 1. CÀO MIỀN BẮC ====================
 def scrape_minhngoc_mb(date_str):
-    domain = "www.minhngoc.net.vn"
-    url = "https://" + domain + "/ket-qua-xo-so/ket-qua-xoso-mien-bac/" + date_str + ".html"
+    url = f"[suspicious link removed]{date_str}.html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -84,7 +82,7 @@ def scrape_minhngoc_mb(date_str):
         return {
             "station_id": "MB",
             "draw_date": db_date,
-            "special_prize": special_prize,
+            "special_prize": str(special_prize),
             "seventh_or_eighth": g7_numbers,
             "lo_numbers": lo_numbers
         }
@@ -94,8 +92,7 @@ def scrape_minhngoc_mb(date_str):
 
 # ==================== 2. CÀO MIỀN NAM & MIỀN TRUNG ====================
 def scrape_minhngoc_mn_mt(region_code, date_str):
-    domain = "www.minhngoc.net.vn"
-    url = "https://" + domain + "/ket-qua-xo-so/" + region_code + "/" + date_str + ".html"
+    url = f"[suspicious link removed]{region_code}/{date_str}.html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -131,7 +128,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                     if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
                         station_results[st_name]["g8"].extend(nums)
                     elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
-                        station_results[st_name]["special"] = nums if nums else ""
+                        station_results[st_name]["special"] = nums[0] if nums else ""
 
                     station_results[st_name]["raw_prizes"].extend(nums)
 
@@ -142,10 +139,11 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
             st_id = STATION_MAP.get(name)
             if st_id and res_data["raw_prizes"]:
                 lo_numbers = extract_2d_lo(res_data["raw_prizes"])
+                special_val = str(res_data["special"]) if res_data["special"] else ""
                 records.append({
                     "station_id": st_id,
                     "draw_date": db_date,
-                    "special_prize": res_data["special"],
+                    "special_prize": special_val,
                     "seventh_or_eighth": res_data["g8"],
                     "lo_numbers": lo_numbers
                 })
@@ -173,7 +171,7 @@ def save_to_supabase(data):
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
     resp = requests.post(endpoint, json=data, headers=HEADERS_SUPABASE)
     if resp.status_code in (200, 201):
-        print(f"✅ Đã lưu thành công đài {data['station_id']} ngày {data['draw_date']}")
+        print(f"✅ Đã lưu đài {data['station_id']} ngày {data['draw_date']}")
     else:
         print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: {resp.status_code} - {resp.text}")
 
@@ -187,7 +185,7 @@ def clean_rolling_50(station_id):
             old_ids = [str(row['id']) for row in res]
             delete_url = f"{SUPABASE_URL}/rest/v1/draw_results?id=in.({','.join(old_ids)})"
             requests.delete(delete_url, headers=HEADERS_SUPABASE)
-            print(f"🧹 Đã dọn dẹp {len(old_ids)} kỳ cũ của đài {station_id}.")
+            print(f"🧹 Dọn dẹp {len(old_ids)} kỳ cũ của đài {station_id}")
     except Exception as e:
         print(f"Lỗi dọn dẹp đài {station_id}: {e}")
 
@@ -196,9 +194,9 @@ if __name__ == '__main__':
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
     today_str = today.strftime("%d-%m-%Y")
     
-    print(f"🚀 Bắt đầu tiến trình cào dữ liệu xổ số tự động ngày {today_str}...")
+    print(f"🚀 Bắt đầu tiến trình cào dữ liệu xổ số ngày {today_str}...")
 
-    # 1. Cào Miền Bắc
+    # 1. Cào 50 kỳ lịch sử cho Miền Bắc nếu chưa đủ 50 kỳ
     mb_count = get_existing_count("MB")
     if mb_count < 50:
         print(f"🔄 Đài MB mới có {mb_count}/50 kỳ. Đang nạp đủ 50 kỳ lịch sử...")
@@ -207,25 +205,28 @@ if __name__ == '__main__':
             item = scrape_minhngoc_mb(d_str)
             if item:
                 save_to_supabase(item)
-            time.sleep(0.2)
+            time.sleep(0.15)
         clean_rolling_50("MB")
     else:
-        print(f"✅ Đài MB đã đủ 50 kỳ. Cào bổ sung hôm nay ({today_str})...")
         item = scrape_minhngoc_mb(today_str)
         if item:
             save_to_supabase(item)
             clean_rolling_50("MB")
 
-    # 2. Cào Miền Nam & Miền Trung
-    print(f"🌐 Đang cào Miền Nam & Miền Trung ngày {today_str}...")
-    mn_items = scrape_minhngoc_mn_mt("mien-nam", today_str)
-    for item in mn_items:
-        save_to_supabase(item)
-        clean_rolling_50(item["station_id"])
+    # 2. Cào 50 kỳ lịch sử cho tất cả các đài Miền Nam & Miền Trung (Lùi tối đa 365 ngày)
+    print("🌐 Đang kiểm tra và cào nạp đủ 50 kỳ lịch sử cho Miền Nam & Miền Trung...")
+    for i in range(120): # Lùi 120 ngày gần nhất để đảm bảo đủ 50 kỳ cho mọi đài
+        d_str = (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
+        mn_items = scrape_minhngoc_mn_mt("mien-nam", d_str)
+        for item in mn_items:
+            save_to_supabase(item)
+            clean_rolling_50(item["station_id"])
 
-    mt_items = scrape_minhngoc_mn_mt("mien-trung", today_str)
-    for item in mt_items:
-        save_to_supabase(item)
-        clean_rolling_50(item["station_id"])
+        mt_items = scrape_minhngoc_mn_mt("mien-trung", d_str)
+        for item in mt_items:
+            save_to_supabase(item)
+            clean_rolling_50(item["station_id"])
+        
+        time.sleep(0.15)
 
-    print("🎉 Hoàn tất quá trình cào và cập nhật 50 kỳ cuốn chiếu!")
+    print("🎉 Hoàn tất quá trình cào và dọn dẹp 50 kỳ cuốn chiếu cho 3 Miền!")
