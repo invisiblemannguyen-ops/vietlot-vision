@@ -42,10 +42,11 @@ export function useAppData(): AppData {
     try {
       const s = await fetchStations();
       setStations(s);
-      if (s.length > 0 && !selectedStation) {
-        setSelectedStation(s[0]);
-        // Tải ngay 50 kỳ quay lịch sử ban đầu cho đài mặc định
-        const d = await fetchDraws(s[0].id);
+      if (s.length > 0) {
+        const target = selectedStation || s[0];
+        setSelectedStation(target);
+        // Nạp ngay 50 kỳ quay thực tế từ CSDL ban đầu
+        const d = await fetchDraws(target.id);
         setDraws(d);
       }
     } catch (e) {
@@ -74,7 +75,9 @@ export function useAppData(): AppData {
           .maybeSingle();
         if (error) throw error;
         const station = data as LotteryStation;
-        setSelectedStation(station);
+        if (station) {
+          setSelectedStation(station);
+        }
         const d = await fetchDraws(id);
         setDraws(d);
       } catch (e) {
