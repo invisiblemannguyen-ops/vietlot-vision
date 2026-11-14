@@ -85,22 +85,13 @@ const checkCalculationTime = (region: string): { canCalculate: boolean; targetHo
   };
 };
 
-// Hàm kiểm tra đã qua mốc 18h45 (khi cả 3 miền đã mở thưởng xong) hay chưa
-const checkIsAfter18h45 = () => {
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-  return hours > 18 || (hours === 18 && minutes >= 45);
-};
-
 function App() {
   const todayName = useMemo(() => getTodayName(), []);
-  const isAfter18h45 = useMemo(() => checkIsAfter18h45(), []);
 
   const [selectedRegion, setSelectedRegion] = useState<RegionId>("MT");
   const [selectedStation, setSelectedStation] = useState<{ id: string; name: string; region: string } | null>(null);
   
-  // Thứ tự động nhảy và ĐỘNG KHÓA CỨNG theo ngày hôm nay (Thứ 6 -> T6, Thứ 7 -> T7)
+  // Thứ tự động nhảy và ĐỘNG KHÓA CỨNG theo ngày hôm nay
   const [selectedDay] = useState<string>(todayName);
 
   // Tab dưới cùng: "home" (Trang Chủ) hoặc "results" (Kết Quả)
@@ -111,7 +102,7 @@ function App() {
 
   const app = useAppData();
 
-  // Chọn đài và kích hoạt kéo 50 kỳ quay từ CSDL
+  // Chọn đài và kích hoạt kéo 50 kỳ quay từ CSDL dùng cho thuật toán Decay
   const handleSelectStation = (st: any) => {
     setSelectedStation(st);
     if (app.selectStation) {
@@ -144,45 +135,35 @@ function App() {
     })) as any;
   }
 
-  // Tự động tải kết quả cho đài đầu tiên của miền khi đổi miền hoặc khi app.draws chưa có
+  // Tự động nạp đài đầu tiên của miền nếu chưa chọn đài
   useEffect(() => {
-    if (stationsInRegion.length > 0) {
-      const activeId = selectedStation?.id || stationsInRegion[0].id;
-      if (activeId && (!app.selectedStation || app.selectedStation.id !== activeId || app.draws.length === 0)) {
-        app.selectStation(activeId);
+    if (stationsInRegion.length > 0 && !selectedStation && app.stations.length > 0) {
+      const firstSt = stationsInRegion[0];
+      setSelectedStation(firstSt);
+      if (app.selectStation) {
+        app.selectStation(firstSt.id);
       }
     }
-  }, [selectedRegion, selectedStation?.id, stationsInRegion]);
+  }, [selectedRegion, stationsInRegion, selectedStation, app]);
 
-  // Kéo danh sách kỳ quay hợp lệ (Trước 18h45 nếu đã có kỳ hôm nay trong DB thì lấy kỳ ngày hôm qua)
-  const activeDraws = useMemo(() => {
-    if (!app.draws || app.draws.length === 0) return [];
-    const todayStr = new Date().toISOString().split("T")[0];
-    const latestDrawDate = app.draws[0]?.draw_date;
-    if (!isAfter18h45 && latestDrawDate === todayStr && app.draws.length > 1) {
-      return app.draws.slice(1);
-    }
-    return app.draws;
-  }, [app.draws, isAfter18h45]);
-
-  // Tính toán số dự đoán REAL-TIME từ CSDL bằng Thuật toán Decay
+  // Dữ liệu 50 kỳ quay dùng để tính thuật toán Decay cho TAB TRANG CHỦ
   const realPredictions = useMemo(() => {
-    if (!activeDraws || activeDraws.length === 0) return null;
-    const reg = selectedStation ? selectedStation.region : selectedRegion;
-    const { canCalculate } = checkCalculationTime(reg);
-    if (!canCalculate) return null; // Chưa đến mốc giờ -> Giữ trạng thái chờ
+    if (!selectedStation || !app.draws || app.draws.length === 0) return null;
+    const { canCalculate } = checkCalculationTime(selectedStation.region);
+    if (!canCalculate) return null;
 
     try {
-      return generatePredictionsFromDecay(activeDraws);
+      return generatePredictionsFromDecay(app.draws);
     } catch {
       return null;
     }
-  }, [selectedStation, selectedRegion, activeDraws]);
+  }, [selectedStation, app.draws]);
 
-  // Hàm trả về chuỗi số hiển thị (hoặc trạng thái chờ) cho 7 mục dự đoán
+  // Giá trị số dự đoán ở Trang chủ
   const getPredictionValue = (typeId: string, mockNums: string) => {
-    const reg = selectedStation ? selectedStation.region : selectedRegion;
-    const { canCalculate, targetHour } = checkCalculationTime(reg);
+    if (!selectedStation) return mockNums;
+
+    const { canCalculate, targetHour } = checkCalculationTime(selectedStation.region);
     if (!canCalculate) {
       return `Giữ trạng thái chờ (Tính tự động lúc ${targetHour}:00)`;
     }
@@ -209,17 +190,21 @@ function App() {
     }
   };
 
-  // Tính Tỷ Lệ Trúng AI (ROI) thực tế dựa trên kỳ mở thưởng gần nhất đã hoàn tất
+  // Kỳ quay HÔM QUA (mới nhất đã xổ) dùng để hiển thị Bảng KQSX & tính ROI
+  const latestDraw = useMemo(() => {
+    return app.draws && app.draws.length > 0 ? app.draws[0] : null;
+  }, [app.draws]);
+
+  // Tính Tỷ Lệ Trúng AI (ROI) dựa trên kỳ quay hôm qua (latestDraw = app.draws[0]) so với dự đoán
   const hitRateStats = useMemo(() => {
-    if (!activeDraws || activeDraws.length < 2) {
-      return { rate: "80.0%", hits: 4, total: 5, date: activeDraws[0]?.draw_date || "-" };
+    if (!app.draws || app.draws.length < 2) {
+      return { rate: "80.0%", hits: 4, total: 5, date: latestDraw?.draw_date || "Kỳ gần nhất" };
     }
-    const latestDrawItem = activeDraws[0];
-    const pastDraws = activeDraws.slice(1);
+    const pastDraws = app.draws.slice(1);
 
     try {
       const preds = generatePredictionsFromDecay(pastDraws);
-      const winningSet = new Set(latestDrawItem.lo_numbers || []);
+      const winningSet = new Set(latestDraw?.lo_numbers || []);
       
       let hits = 0;
       let total = 0;
@@ -231,28 +216,27 @@ function App() {
 
       preds.dauDuoi?.forEach((n) => {
         total++;
-        if (winningSet.has(n) || (latestDrawItem.special_prize && latestDrawItem.special_prize.endsWith(n))) hits++;
+        if (winningSet.has(n) || (latestDraw?.special_prize && latestDraw.special_prize.endsWith(n))) hits++;
       });
 
       preds.docDac?.forEach((n) => {
         total++;
-        if (latestDrawItem.special_prize && latestDrawItem.special_prize.endsWith(n)) hits++;
+        if (latestDraw?.special_prize && latestDraw.special_prize.endsWith(n)) hits++;
       });
 
-      if (total === 0) return { rate: "80.0%", hits: 4, total: 5, date: latestDrawItem.draw_date || "-" };
+      if (total === 0) return { rate: "80.0%", hits: 4, total: 5, date: latestDraw?.draw_date || "Kỳ gần nhất" };
       const percentage = ((hits / total) * 100).toFixed(1);
-      return { rate: `${percentage}%`, hits, total, date: latestDrawItem.draw_date || "-" };
+      return { rate: `${percentage}%`, hits, total, date: latestDraw?.draw_date || "Kỳ gần nhất" };
     } catch {
-      return { rate: "80.0%", hits: 4, total: 5, date: activeDraws[0]?.draw_date || "-" };
+      return { rate: "80.0%", hits: 4, total: 5, date: latestDraw?.draw_date || "Kỳ gần nhất" };
     }
-  }, [activeDraws]);
+  }, [app.draws, latestDraw]);
 
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
-    setSelectedStation(null); // Trở về danh sách đài khi đổi miền
+    setSelectedStation(null);
   };
 
-  // Mở khóa riêng biệt cho từng đài (tránh bị dính từ đài này sang đài khác)
   const handleUnlock = (typeId: string) => {
     if (!selectedStation) return;
     const itemKey = `${selectedStation.id}_${typeId}`;
@@ -261,20 +245,16 @@ function App() {
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
 
-  // Tự động lấy kỳ mở thưởng mới nhất từ activeDraws
-  const latestDraw = activeDraws.length > 0 ? activeDraws[0] : null;
+  const isMB = selectedRegion === "MB";
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
-      {/* Cột Menu 3 Miền bên trái */}
       <Sidebar
         selectedRegion={selectedRegion}
         onSelectRegion={handleSelectRegion}
       />
 
-      {/* Vùng nội dung chính bên phải */}
       <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
-        {/* Header trên */}
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -297,7 +277,6 @@ function App() {
           </div>
         </header>
 
-        {/* Thanh chọn Thứ trong tuần - TỰ ĐỘNG KHÓA CỨNG THEO THỨ HÔM NAY */}
         <div className="flex items-center gap-1.5 overflow-x-auto border-b border-white/5 bg-ink-900/30 px-3 py-2 shrink-0">
           {WEEKDAYS.map((day) => {
             const isToday = day === todayName;
@@ -322,14 +301,12 @@ function App() {
           })}
         </div>
 
-        {/* Vùng cuộn chính */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20">
           <div className="mx-auto w-full max-w-2xl space-y-4">
 
-            {/* TAB 1: TRANG CHỦ */}
+            {/* TAB 1: TRANG CHỦ (Dự đoán) */}
             {activeTab === "home" && (
               <>
-                {/* BƯỚC 1: Danh sách các đài mở thưởng */}
                 {!selectedStation ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between pb-1">
@@ -371,7 +348,6 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  /* BƯỚC 2: Màn hình 7 mục dự đoán che mờ + Nút "Xem" */
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
                       <button
@@ -388,7 +364,6 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Danh sách 7 mục dự đoán */}
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
                         const itemKey = selectedStation ? `${selectedStation.id}_${item.id}` : item.id;
@@ -412,7 +387,6 @@ function App() {
                               )}
                             </div>
 
-                            {/* Vùng che mờ + Nút "Xem" */}
                             <div className="relative flex items-center justify-center rounded-xl bg-ink-950/90 py-4 px-3 border border-white/5 min-h-[56px]">
                               <div
                                 className={`text-base sm:text-lg font-mono font-bold tracking-wider transition-all duration-300 ${
@@ -445,20 +419,20 @@ function App() {
               </>
             )}
 
-            {/* TAB 2: KẾT QUẢ XỔ SỐ THẬT + TỶ LỆ TRÚNG DỰ ĐOÁN (ROI) */}
+            {/* TAB 2: KẾT QUẢ XỔ SỐ CỦA KỲ QUAY HÔM QUA (27 Giải MB hoặc 18 Giải MT/MN) */}
             {activeTab === "results" && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
                   <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-sky-400" />
-                    KẾT QUẢ CÁC KỲ TRƯỚC ({selectedStation ? selectedStation.name : REGION_LABELS[selectedRegion]})
+                    KẾT QUẢ KỲ TRƯỚC ({selectedStation ? selectedStation.name : REGION_LABELS[selectedRegion]})
                   </h2>
                   <span className="text-[11px] text-emerald-400 font-semibold">
-                    {isAfter18h45 ? "Đã cập nhật hôm nay" : "Kỳ ngày trước (Chờ 18:45)"}
+                    {isMB ? "27 Giải mở thưởng" : "18 Giải mở thưởng"}
                   </span>
                 </div>
 
-                {/* Thẻ Thống kê Tỷ lệ Trúng Dự đoán AI (ROI) */}
+                {/* Thẻ Thống kê Tỷ lệ Trúng AI (ROI) */}
                 <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-3.5 flex items-center justify-between shadow-lg shadow-sky-500/10">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30">
@@ -480,7 +454,7 @@ function App() {
                   </div>
                 </div>
 
-                {/* BẢNG KẾT QUẢ XỔ SỐ TRUYỀN THỐNG 8 GIẢI (MÔ PHỎNG CHUẨN 100% THEO ẢNH MẪU) */}
+                {/* BẢNG KẾT QUẢ XỔ SỐ TRUYỀN THỐNG CHUẨN KỲ HÔM QUA (27 giải MB / 18 giải MN-MT) */}
                 <div className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3 shadow-xl backdrop-blur-md">
                   <div className="text-center pb-2 border-b border-white/5">
                     <h3 className="text-base font-bold text-sky-300 uppercase tracking-wide">
@@ -491,122 +465,169 @@ function App() {
                     </p>
                   </div>
 
-                  {/* Bảng Lưới 8 Giải chuẩn Tailwind */}
+                  {/* Bảng Kết Quả Xổ Số Grid Layout */}
                   <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/60 text-slate-100 text-xs sm:text-sm font-semibold">
-                    <table className="w-full border-collapse text-center">
-                      <tbody>
-                        {/* Đặc biệt */}
-                        <tr className="border-b border-white/10">
-                          <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Đặc biệt
-                          </td>
-                          <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
-                            {latestDraw?.special_prize || (latestDraw as any)?.prizes?.special || "-"}
-                          </td>
-                        </tr>
-
-                        {/* Giải nhất */}
-                        <tr className="border-b border-white/10">
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải nhất
-                          </td>
-                          <td className="p-2.5 font-bold text-white">
-                            {(latestDraw as any)?.prizes?.g1?.join(" - ") || (latestDraw?.lo_numbers && latestDraw.lo_numbers[0]) || "-"}
-                          </td>
-                        </tr>
-
-                        {/* Giải nhì */}
-                        <tr className="border-b border-white/10">
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải nhì
-                          </td>
-                          <td className="p-2.5">
-                            <div className="grid grid-cols-2 gap-2 font-bold text-white">
-                              <span>{(latestDraw as any)?.prizes?.g2?.[0] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[1]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g2?.[1] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[2]) || "-"}</span>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Giải ba */}
-                        <tr className="border-b border-white/10">
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải ba
-                          </td>
-                          <td className="p-2.5">
-                            <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
-                              <span>{(latestDraw as any)?.prizes?.g3?.[0] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[3]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g3?.[1] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[4]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g3?.[2] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[5]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g3?.[3] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[6]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g3?.[4] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[7]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g3?.[5] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[8]) || "-"}</span>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Giải tư */}
-                        <tr className="border-b border-white/10">
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải tư
-                          </td>
-                          <td className="p-2.5">
-                            <div className="grid grid-cols-4 gap-1 font-bold text-white">
-                              <span>{(latestDraw as any)?.prizes?.g4?.[0] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[9]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g4?.[1] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[10]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g4?.[2] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[11]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g4?.[3] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[12]) || "-"}</span>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Giải năm */}
-                        <tr className="border-b border-white/10">
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải năm
-                          </td>
-                          <td className="p-2.5">
-                            <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
-                              <span>{(latestDraw as any)?.prizes?.g5?.[0] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[13]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g5?.[1] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[14]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g5?.[2] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[15]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g5?.[3] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[16]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g5?.[4] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[17]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g5?.[5] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[18]) || "-"}</span>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Giải sáu */}
-                        <tr className="border-b border-white/10">
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải sáu
-                          </td>
-                          <td className="p-2.5">
-                            <div className="grid grid-cols-3 gap-1 font-bold text-white">
-                              <span>{(latestDraw as any)?.prizes?.g6?.[0] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[19]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g6?.[1] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[20]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g6?.[2] || (latestDraw?.lo_numbers && latestDraw.lo_numbers[21]) || "-"}</span>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {/* Giải bảy */}
-                        <tr>
-                          <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">
-                            Giải bảy
-                          </td>
-                          <td className="p-2.5">
-                            <div className="grid grid-cols-4 gap-1 font-bold text-sky-300">
-                              <span>{(latestDraw as any)?.prizes?.g7?.[0] || (latestDraw?.seventh_or_eighth?.[0]) || (latestDraw?.lo_numbers && latestDraw.lo_numbers[22]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g7?.[1] || (latestDraw?.seventh_or_eighth?.[1]) || (latestDraw?.lo_numbers && latestDraw.lo_numbers[23]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g7?.[2] || (latestDraw?.seventh_or_eighth?.[2]) || (latestDraw?.lo_numbers && latestDraw.lo_numbers[24]) || "-"}</span>
-                              <span>{(latestDraw as any)?.prizes?.g7?.[3] || (latestDraw?.seventh_or_eighth?.[3]) || (latestDraw?.lo_numbers && latestDraw.lo_numbers[25]) || "-"}</span>
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    {isMB ? (
+                      /* MIỀN BẮC: BẢNG 27 GIẢI */
+                      <table className="w-full border-collapse text-center">
+                        <tbody>
+                          <tr className="border-b border-white/10">
+                            <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
+                            <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
+                              {latestDraw?.special_prize || "-"}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
+                            <td className="p-2.5 font-bold text-white">
+                              {latestDraw?.lo_numbers?.[0] || "-"}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-2 gap-2 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[1] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[2] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[3] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[4] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[5] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[6] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[7] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[8] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-4 gap-1 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[9] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[10] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[11] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[12] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[13] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[14] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[15] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[16] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[17] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[18] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-3 gap-1 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[19] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[20] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[21] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-4 gap-1 font-bold text-sky-300">
+                                <span>{latestDraw?.seventh_or_eighth?.[0] || latestDraw?.lo_numbers?.[22] || "-"}</span>
+                                <span>{latestDraw?.seventh_or_eighth?.[1] || latestDraw?.lo_numbers?.[23] || "-"}</span>
+                                <span>{latestDraw?.seventh_or_eighth?.[2] || latestDraw?.lo_numbers?.[24] || "-"}</span>
+                                <span>{latestDraw?.seventh_or_eighth?.[3] || latestDraw?.lo_numbers?.[25] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    ) : (
+                      /* MIỀN TRUNG / MIỀN NAM: BẢNG 18 GIẢI (ĐẶC BIỆT ĐẾN GIẢI 8) */
+                      <table className="w-full border-collapse text-center">
+                        <tbody>
+                          <tr className="border-b border-white/10">
+                            <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tám</td>
+                            <td className="p-2.5 font-bold text-sky-300 text-base">
+                              {latestDraw?.seventh_or_eighth?.[0] || latestDraw?.lo_numbers?.[0] || "-"}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
+                            <td className="p-2.5 font-bold text-white">
+                              {latestDraw?.lo_numbers?.[1] || "-"}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-3 gap-1 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[2] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[3] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[4] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
+                            <td className="p-2.5 font-bold text-white">
+                              {latestDraw?.lo_numbers?.[5] || "-"}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-4 gap-y-1 gap-x-1 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[6] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[7] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[8] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[9] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[10] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[11] || "-"}</span>
+                                <span className="col-span-2">{latestDraw?.lo_numbers?.[12] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
+                            <td className="p-2.5">
+                              <div className="grid grid-cols-2 gap-2 font-bold text-white">
+                                <span>{latestDraw?.lo_numbers?.[13] || "-"}</span>
+                                <span>{latestDraw?.lo_numbers?.[14] || "-"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
+                            <td className="p-2.5 font-bold text-white">
+                              {latestDraw?.lo_numbers?.[15] || "-"}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-white/10">
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
+                            <td className="p-2.5 font-bold text-white">
+                              {latestDraw?.lo_numbers?.[16] || "-"}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
+                            <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
+                              {latestDraw?.special_prize || "-"}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </div>
               </div>
@@ -615,7 +636,6 @@ function App() {
           </div>
         </div>
 
-        {/* Thanh 2 Tab nằm dưới cùng */}
         <div className="absolute bottom-0 left-0 right-0 h-14 bg-ink-900/95 border-t border-white/10 backdrop-blur-xl px-6 flex justify-around items-center z-30">
           <button
             onClick={() => setActiveTab("home")}
