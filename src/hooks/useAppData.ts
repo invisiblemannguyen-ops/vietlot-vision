@@ -45,7 +45,7 @@ export function useAppData(): AppData {
       if (s.length > 0) {
         const target = selectedStation || s[0];
         setSelectedStation(target);
-        // Nạp ngay 50 kỳ quay thực tế từ CSDL ban đầu
+        // Nạp ngay 50 kỳ quay lịch sử ban đầu từ CSDL Supabase
         const d = await fetchDraws(target.id);
         setDraws(d);
       }
