@@ -97,7 +97,7 @@ function App() {
   // Tab dưới cùng: "home" (Trang Chủ) hoặc "results" (Kết Quả)
   const [activeTab, setActiveTab] = useState<"home" | "results">("home");
 
-  // Trạng thái mở khóa khi bấm nút "Xem"
+  // Trạng thái mở khóa khi bấm nút "Xem" (Lưu theo ID đài + ID danh mục để không bị dính sang đài khác)
   const [unlockedItems, setUnlockedItems] = useState<Record<string, boolean>>({});
 
   const app = useAppData();
@@ -195,8 +195,11 @@ function App() {
     setSelectedStation(null); // Trở về danh sách đài khi đổi miền
   };
 
+  // Mở khóa riêng biệt cho từng đài (tránh bị dính từ đài này sang đài khác)
   const handleUnlock = (typeId: string) => {
-    setUnlockedItems((prev) => ({ ...prev, [typeId]: true }));
+    if (!selectedStation) return;
+    const itemKey = `${selectedStation.id}_${typeId}`;
+    setUnlockedItems((prev) => ({ ...prev, [itemKey]: true }));
   };
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
@@ -226,6 +229,7 @@ function App() {
     })) as any;
   }
 
+  // Tự động lấy kỳ mở thưởng mới nhất từ app.draws
   const latestDraw = app.draws && app.draws.length > 0 ? app.draws[0] : null;
 
   return (
@@ -355,7 +359,8 @@ function App() {
                     {/* Danh sách 7 mục dự đoán */}
                     <div className="space-y-3">
                       {PREDICTION_TYPES.map((item) => {
-                        const isUnlocked = unlockedItems[item.id];
+                        const itemKey = selectedStation ? `${selectedStation.id}_${item.id}` : item.id;
+                        const isUnlocked = unlockedItems[itemKey];
                         const displayNums = getPredictionValue(item.id, item.mockNums);
 
                         return (
