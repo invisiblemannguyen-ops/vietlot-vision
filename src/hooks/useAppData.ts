@@ -43,7 +43,10 @@ export function useAppData(): AppData {
       const s = await fetchStations();
       setStations(s);
       if (s.length > 0 && !selectedStation) {
-        setSelectedStation(s);
+        setSelectedStation(s[0]);
+        // Tải ngay 50 kỳ quay lịch sử ban đầu cho đài mặc định
+        const d = await fetchDraws(s[0].id);
+        setDraws(d);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load stations");
