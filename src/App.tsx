@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Sidebar, type RegionId } from "@/components/Sidebar";
 import { useAppData } from "@/hooks/useAppData";
 import { FullPageLoader } from "@/components/Feedback";
@@ -119,11 +119,46 @@ function App() {
     }
   };
 
+  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
+  const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
+  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
+    allowedRegions.includes(s.region)
+  );
+
+  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
+  let stationsInRegion = (app.stations || []).filter((s) => {
+    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
+    const isScheduled = scheduledForToday.some(
+      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
+    );
+    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
+  });
+
+  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
+  if (stationsInRegion.length === 0) {
+    stationsInRegion = scheduledForToday.map((s) => ({
+      id: s.id,
+      name: s.name,
+      time: s.drawTime,
+      region: selectedRegion,
+    })) as any;
+  }
+
+  // Tự động tải kết quả cho đài đầu tiên của miền khi đổi miền hoặc khi app.draws chưa có
+  useEffect(() => {
+    if (stationsInRegion.length > 0) {
+      const activeId = selectedStation?.id || stationsInRegion[0].id;
+      if (activeId && (!app.selectedStation || app.selectedStation.id !== activeId || app.draws.length === 0)) {
+        app.selectStation(activeId);
+      }
+    }
+  }, [selectedRegion, selectedStation?.id, stationsInRegion]);
+
   // Kéo danh sách kỳ quay hợp lệ (Trước 18h45 nếu đã có kỳ hôm nay trong DB thì lấy kỳ ngày hôm qua)
   const activeDraws = useMemo(() => {
     if (!app.draws || app.draws.length === 0) return [];
     const todayStr = new Date().toISOString().split("T")[0];
-    if (!isAfter18h45 && app.draws[0]?.draw_date === todayStr) {
+    if (!isAfter18h45 && app.draws[0]?.draw_date === todayStr && app.draws.length > 1) {
       return app.draws.slice(1);
     }
     return app.draws;
@@ -131,8 +166,9 @@ function App() {
 
   // Tính toán số dự đoán REAL-TIME từ CSDL bằng Thuật toán Decay
   const realPredictions = useMemo(() => {
-    if (!selectedStation || !activeDraws || activeDraws.length === 0) return null;
-    const { canCalculate } = checkCalculationTime(selectedStation.region);
+    if (!activeDraws || activeDraws.length === 0) return null;
+    const reg = selectedStation ? selectedStation.region : selectedRegion;
+    const { canCalculate } = checkCalculationTime(reg);
     if (!canCalculate) return null; // Chưa đến mốc giờ -> Giữ trạng thái chờ
 
     try {
@@ -140,13 +176,12 @@ function App() {
     } catch {
       return null;
     }
-  }, [selectedStation, activeDraws]);
+  }, [selectedStation, selectedRegion, activeDraws]);
 
   // Hàm trả về chuỗi số hiển thị (hoặc trạng thái chờ) cho 7 mục dự đoán
   const getPredictionValue = (typeId: string, mockNums: string) => {
-    if (!selectedStation) return mockNums;
-
-    const { canCalculate, targetHour } = checkCalculationTime(selectedStation.region);
+    const reg = selectedStation ? selectedStation.region : selectedRegion;
+    const { canCalculate, targetHour } = checkCalculationTime(reg);
     if (!canCalculate) {
       return `Giữ trạng thái chờ (Tính tự động lúc ${targetHour}:00)`;
     }
@@ -176,7 +211,7 @@ function App() {
   // Tính Tỷ Lệ Trúng AI (ROI) thực tế dựa trên kỳ mở thưởng gần nhất đã hoàn tất
   const hitRateStats = useMemo(() => {
     if (!activeDraws || activeDraws.length < 2) {
-      return { rate: "82.5%", hits: 4, total: 5, date: "-" };
+      return { rate: "-", hits: 0, total: 0, date: "-" };
     }
     const latestDrawItem = activeDraws[0];
     const pastDraws = activeDraws.slice(1);
@@ -207,7 +242,7 @@ function App() {
       const percentage = ((hits / total) * 100).toFixed(1);
       return { rate: `${percentage}%`, hits, total, date: latestDrawItem.draw_date || "-" };
     } catch {
-      return { rate: "80.0%", hits: 4, total: 5, date: "-" };
+      return { rate: "-", hits: 0, total: 0, date: "-" };
     }
   }, [activeDraws]);
 
@@ -224,31 +259,6 @@ function App() {
   };
 
   if (app.loading) return <FullPageLoader label="Đang kết nối cơ sở dữ liệu..." />;
-
-  // Lấy đài chuẩn từ schedule.ts theo Thứ hôm nay và Miền
-  const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
-  const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
-    allowedRegions.includes(s.region)
-  );
-
-  // Lọc đài từ CSDL khớp với lịch mở thưởng hôm nay
-  let stationsInRegion = (app.stations || []).filter((s) => {
-    const isRegionMatch = allowedRegions.includes(s.region) || allowedRegions.includes(s.region?.toUpperCase());
-    const isScheduled = scheduledForToday.some(
-      (sc) => sc.id.toLowerCase() === s.id.toLowerCase() || s.name.toLowerCase().includes(sc.name.toLowerCase())
-    );
-    return isRegionMatch && (scheduledForToday.length === 0 || isScheduled);
-  });
-
-  // Nếu CSDL chưa kịp cập nhật đài, lấy tự động từ lịch mở thưởng schedule.ts
-  if (stationsInRegion.length === 0) {
-    stationsInRegion = scheduledForToday.map((s) => ({
-      id: s.id,
-      name: s.name,
-      time: s.drawTime,
-      region: selectedRegion,
-    })) as any;
-  }
 
   // Tự động lấy kỳ mở thưởng mới nhất từ activeDraws
   const latestDraw = activeDraws.length > 0 ? activeDraws[0] : null;
