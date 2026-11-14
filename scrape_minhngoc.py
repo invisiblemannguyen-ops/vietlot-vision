@@ -30,7 +30,7 @@ STATION_MAP = {
     "Thừa Thiên Huế": "TTHUE", "T.T.Huế": "TTHUE", "Phú Yên": "PHUYEN", "Đắc Lắc": "DAKLAK", "Đắk Lắk": "DAKLAK", "Quảng Nam": "QUANGNAM",
     "Đà Nẵng": "DANANG", "Khánh Hòa": "KHANHHOA", "Bình Định": "BINHDINH", "Quảng Trị": "QUANGTRI",
     "Quảng Bình": "QUANGBINH", "Gia Lai": "GIALAI", "Ninh Thuận": "NINHTHUAN",
-    "Quảng Ngãi": "QUANGNGAI", "Đắk Nông": "DAKNONG", "Kon Tum": "KONTUM"
+    "Quảng Ngãi": "QUANGNGAI", "Đắc Nông": "DAKNONG", "Kon Tum": "KONTUM"
 }
 
 def extract_2d_lo(prizes_raw):
@@ -44,9 +44,8 @@ def extract_2d_lo(prizes_raw):
 
 # ==================== 1. CÀO MIỀN BẮC ====================
 def scrape_minhngoc_mb(date_str):
-    # Chuẩn hóa loại bỏ 100% khoảng trắng thừa trong URL
-    raw_url = f"[suspicious link removed]{date_str.strip()}.html"
-    url = raw_url.replace(" ", "")
+    domain = "www.minhngoc.net.vn"
+    url = "https://" + domain + "/ket-qua-xo-so/ket-qua-xoso-mien-bac/" + date_str.strip() + ".html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -95,8 +94,8 @@ def scrape_minhngoc_mb(date_str):
 
 # ==================== 2. CÀO MIỀN NAM & MIỀN TRUNG ====================
 def scrape_minhngoc_mn_mt(region_code, date_str):
-    raw_url = f"[suspicious link removed]{region_code}/{date_str.strip()}.html"
-    url = raw_url.replace(" ", "")
+    domain = "www.minhngoc.net.vn"
+    url = "https://" + domain + "/ket-qua-xo-so/" + region_code + "/" + date_str.strip() + ".html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -217,9 +216,9 @@ if __name__ == '__main__':
             save_to_supabase(item)
             clean_rolling_50("MB")
 
-    # 2. Cào Miền Nam & Miền Trung (quét lùi ngày nạp đủ 50 kỳ cho từng đài)
+    # 2. Cào Miền Nam & Miền Trung (nạp lùi ngày để gom đủ 50 kỳ cho từng đài)
     print(f"🌐 Đang cào dữ liệu cho Miền Nam & Miền Trung...")
-    for i in range(365):
+    for i in range(120):
         d_str = (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
         
         mn_items = scrape_minhngoc_mn_mt("mien-nam", d_str)
