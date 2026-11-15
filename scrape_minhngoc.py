@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # ===========================================================================
-# THÔNG TIN SUPABASE ĐÃ ĐƯỢC CẤU HÌNH TRỰC TIẾP (ĐÃ BỎ /rest/v1/)
+# CẤU HÌNH SUPABASE TRỰC TIẾP
 # ===========================================================================
 SUPABASE_URL = "https://hdonvadjftzkhqjqizrx.supabase.co"
 SUPABASE_KEY = "sb_publishable_gd0nNLRnNq4ppRWbMk6KEw_F8n13jQf"
@@ -135,7 +135,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                     if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
                         station_results[st_name]["g8"].extend(nums)
                     elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
-                        station_results[st_name]["special"] = nums if nums else ""
+                        station_results[st_name]["special"] = nums[0] if nums else ""
 
                     station_results[st_name]["raw_prizes"].extend(nums)
 
@@ -237,4 +237,4 @@ if __name__ == '__main__':
             
         time.sleep(0.15)
 
-    print("🎉 Hoàn tất quá trình cào và dọn dẹp 50 kỳ cuốn chiếu!")
+    print("🎉 Hoàn tất quá trình cào và dọn 
