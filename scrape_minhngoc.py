@@ -237,4 +237,4 @@ if __name__ == '__main__':
             
         time.sleep(0.15)
 
-    print("🎉 Hoàn tất quá trình cào và dọn 
+    print("🎉 Hoàn tất quá trình cào và dọn dẹp 50 kỳ cuốn chiếu!")
