@@ -18,6 +18,12 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
+HEADERS_WEB = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
+}
+
 SCHEME = "https://"
 HOST = "www.minhngoc.net.vn"
 
@@ -47,11 +53,10 @@ def extract_2d_lo(prizes_raw):
             lo_set.append(clean_p[-2:])
     return lo_set
 
-def get_page_soup(urls):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+def fetch_soup(urls):
     for url in urls:
         try:
-            res = requests.get(url, headers=headers, timeout=12)
+            res = requests.get(url, headers=HEADERS_WEB, timeout=12)
             if res.status_code == 200 and len(res.text) > 1000:
                 return BeautifulSoup(res.text, 'html.parser')
         except Exception:
@@ -64,12 +69,12 @@ def scrape_minhngoc_mb(date_str):
         f"{SCHEME}{HOST}/ket-qua-xo-so/mien-bac/{date_str.strip()}.html",
         f"{SCHEME}{HOST}/ket-qua-xo-so/ket-qua-xoso-mien-bac/{date_str.strip()}.html"
     ]
-    soup = get_page_soup(urls)
+    soup = fetch_soup(urls)
     if not soup:
-        print(f"⚠️ MB {date_str}: Không thể tải trang kết quả")
+        print(f"⚠️ MB {date_str}: Không tải được trang")
         return None
 
-    # Tìm bảng kết quả: ưu tiên class, nếu không có thì tìm parent của td.gdb
+    # Tìm bảng kết quả: ưu tiên regex class, nếu không có thì tìm parent từ ô gdb
     box_table = soup.find('table', class_=re.compile(r'bkqtmb|bkqmb|box_kqxs'))
     if not box_table:
         gdb_td = soup.find('td', class_='gdb')
@@ -117,11 +122,10 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
     urls = [
         f"{SCHEME}{HOST}/ket-qua-xo-so/{region_code}/{date_str.strip()}.html"
     ]
-    soup = get_page_soup(urls)
+    soup = fetch_soup(urls)
     if not soup:
         return []
 
-    # Tìm bảng kết quả: ưu tiên class, nếu không có thì tìm parent của tr.header
     box_table = soup.find('table', class_=re.compile(r'bkqtmiennam|bkqtmientrung|bkqtmn|bkqtmt'))
     if not box_table:
         header_tr = soup.find('tr', class_='header')
@@ -135,7 +139,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
     if not header_row:
         return []
 
-    station_names = [td.text.strip() for td in header_row.find_all('td') if td.text.strip()]
+    station_names = [td.text.strip() for td in header_row.find_all('td') if td.text.strip() and "Giải" not in td.text and "Tỉnh" not in td.text]
     station_results = {name: {"special": "", "g8": [], "raw_prizes": []} for name in station_names}
 
     rows = box_table.find_all('tr')
@@ -152,9 +156,9 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                 if not nums:
                     continue
                 
-                if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
+                if prize_name in ['G.8', 'Giải 8', 'Giải Tám', '8']:
                     station_results[st_name]["g8"].extend(nums)
-                elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
+                elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt', 'DB']:
                     station_results[st_name]["special"] = nums[0] if nums else ""
 
                 station_results[st_name]["raw_prizes"].extend(nums)
@@ -239,7 +243,7 @@ if __name__ == '__main__':
             save_to_supabase(item)
             clean_rolling_50("MB")
 
-    # 2. Cào Miền Nam & Miền Trung
+    # 2. Cào Miền Nam & Miền Trung (quét lùi 120 ngày để nạp đủ 50 kỳ cho tất cả các đài)
     print(f"🌐 Đang cào dữ liệu cho Miền Nam & Miền Trung...")
     for i in range(120):
         d_str = (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
