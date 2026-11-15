@@ -50,16 +50,18 @@ def extract_2d_lo(prizes_raw):
 
 # ==================== 1. CÀO MIỀN BẮC ====================
 def scrape_minhngoc_mb(date_str):
-    url = f"{SCHEME}{HOST}/ket-qua-xo-so/ket-qua-xoso-mien-bac/{date_str.strip()}.html"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    url = f"{SCHEME}{HOST}/ket-qua-xo-so/mien-bac/{date_str.strip()}.html"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
         if res.status_code != 200:
+            print(f"⚠️ MB {date_str}: Lỗi HTTP {res.status_code}")
             return None
 
         soup = BeautifulSoup(res.text, 'html.parser')
         box_table = soup.find('table', class_='bkqtmb')
         if not box_table:
+            print(f"⚠️ MB {date_str}: Không tìm thấy bảng bkqtmb")
             return None
 
         prizes_raw = []
@@ -100,10 +102,11 @@ def scrape_minhngoc_mb(date_str):
 # ==================== 2. CÀO MIỀN NAM & MIỀN TRUNG ====================
 def scrape_minhngoc_mn_mt(region_code, date_str):
     url = f"{SCHEME}{HOST}/ket-qua-xo-so/{region_code}/{date_str.strip()}.html"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
         if res.status_code != 200:
+            print(f"⚠️ {region_code} {date_str}: Lỗi HTTP {res.status_code}")
             return []
 
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -135,7 +138,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                     if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
                         station_results[st_name]["g8"].extend(nums)
                     elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
-                        station_results[st_name]["special"] = nums[0] if nums else ""
+                        station_results[st_name]["special"] = nums if nums else ""
 
                     station_results[st_name]["raw_prizes"].extend(nums)
 
@@ -166,6 +169,8 @@ def get_existing_count(station_id):
         res = requests.get(url, headers=HEADERS_SUPABASE, timeout=10)
         if res.status_code == 200 and isinstance(res.json(), list):
             return len(res.json())
+        else:
+            print(f"⚠️ Kiểm tra đài {station_id}: HTTP {res.status_code} - {res.text[:100]}")
     except Exception as e:
         print(f"❌ Lỗi kiểm tra đài {station_id}: {e}")
     return 0
@@ -179,7 +184,7 @@ def save_to_supabase(data):
         if resp.status_code in (200, 201):
             print(f"✅ Đã lưu thành công đài {data['station_id']} ngày {data['draw_date']}")
         else:
-            print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: Mã {resp.status_code} - {resp.text}")
+            print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: Mã {resp.status_code} - {resp.text[:150]}")
     except Exception as e:
         print(f"❌ Lỗi kết nối Supabase [{data['station_id']}]: {e}")
 
@@ -202,7 +207,7 @@ if __name__ == '__main__':
     
     print(f"🚀 Bắt đầu tiến trình cào dữ liệu xổ số tự động ngày {today_str}...")
 
-    # 1. Cào Miền Bắc (nạp đủ 50 kỳ lịch sử)
+    # 1. Cào Miền Bắc
     mb_count = get_existing_count("MB")
     if mb_count < 50:
         print(f"🔄 Đài MB mới có {mb_count}/50 kỳ. Đang nạp đủ 50 kỳ lịch sử...")
@@ -220,7 +225,7 @@ if __name__ == '__main__':
             save_to_supabase(item)
             clean_rolling_50("MB")
 
-    # 2. Cào Miền Nam & Miền Trung (quét lùi 120 ngày để gom đủ 50 kỳ cho từng đài)
+    # 2. Cào Miền Nam & Miền Trung
     print(f"🌐 Đang cào dữ liệu cho Miền Nam & Miền Trung...")
     for i in range(120):
         d_str = (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
