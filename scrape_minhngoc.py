@@ -5,9 +5,12 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
-# Lấy thông tin cấu hình từ GitHub Secrets
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+# ---------------------------------------------------------------------------
+# CẤU HÌNH SUPABASE:
+# Nhận tự động từ GitHub Secrets hoặc ĐIỀN TRỰC TIẾP URL/KEY vào dấu ngoặc bên dưới
+# ---------------------------------------------------------------------------
+SUPABASE_URL = os.environ.get('SUPABASE_URL') or "https://YOUR_SUPABASE_PROJECT_ID.supabase.co"
+SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or os.environ.get('SUPABASE_KEY') or "YOUR_SUPABASE_SERVICE_ROLE_KEY"
 
 HEADERS_SUPABASE = {
     'apikey': SUPABASE_KEY,
@@ -15,6 +18,10 @@ HEADERS_SUPABASE = {
     'Content-Type': 'application/json',
     'Prefer': 'resolution=merge-duplicates',
 }
+
+# Tên miền cào dữ liệu
+SCHEME = "https://"
+HOST = "www.minhngoc.net.vn"
 
 # Ánh chiếu tên đài Minh Ngọc sang station_id chuẩn trong Supabase
 STATION_MAP = {
@@ -44,8 +51,7 @@ def extract_2d_lo(prizes_raw):
 
 # ==================== 1. CÀO MIỀN BẮC ====================
 def scrape_minhngoc_mb(date_str):
-    domain = "www.minhngoc.net.vn"
-    url = "https://" + domain + "/ket-qua-xo-so/ket-qua-xoso-mien-bac/" + date_str.strip() + ".html"
+    url = f"{SCHEME}{HOST}/ket-qua-xo-so/ket-qua-xoso-mien-bac/{date_str.strip()}.html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -94,8 +100,7 @@ def scrape_minhngoc_mb(date_str):
 
 # ==================== 2. CÀO MIỀN NAM & MIỀN TRUNG ====================
 def scrape_minhngoc_mn_mt(region_code, date_str):
-    domain = "www.minhngoc.net.vn"
-    url = "https://" + domain + "/ket-qua-xo-so/" + region_code + "/" + date_str.strip() + ".html"
+    url = f"{SCHEME}{HOST}/ket-qua-xo-so/{region_code}/{date_str.strip()}.html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -131,7 +136,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                     if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
                         station_results[st_name]["g8"].extend(nums)
                     elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
-                        station_results[st_name]["special"] = nums[0] if nums else ""
+                        station_results[st_name]["special"] = nums if nums else ""
 
                     station_results[st_name]["raw_prizes"].extend(nums)
 
@@ -142,10 +147,11 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
             st_id = STATION_MAP.get(name)
             if st_id and res_data["raw_prizes"]:
                 lo_numbers = extract_2d_lo(res_data["raw_prizes"])
+                special_val = str(res_data["special"]) if res_data["special"] else ""
                 records.append({
                     "station_id": st_id,
                     "draw_date": db_date,
-                    "special_prize": str(res_data["special"]),
+                    "special_prize": special_val,
                     "seventh_or_eighth": res_data["g8"],
                     "lo_numbers": lo_numbers
                 })
@@ -156,11 +162,11 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
 
 # ==================== 3. LƯU & DỌN DẸP SUPABASE ====================
 def get_existing_count(station_id):
-    if not SUPABASE_URL:
+    if not SUPABASE_URL or not SUPABASE_KEY or "YOUR_SUPABASE" in SUPABASE_URL:
         return 0
-    url = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=id"
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/draw_results?station_id=eq.{station_id}&select=id"
     try:
-        res = requests.get(url, headers=HEADERS_SUPABASE)
+        res = requests.get(url, headers=HEADERS_SUPABASE, timeout=10)
         if res.status_code == 200 and isinstance(res.json(), list):
             return len(res.json())
     except Exception:
@@ -168,25 +174,31 @@ def get_existing_count(station_id):
     return 0
 
 def save_to_supabase(data):
-    if not data or not SUPABASE_URL:
+    if not data:
         return
-    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
-    resp = requests.post(endpoint, json=data, headers=HEADERS_SUPABASE)
-    if resp.status_code in (200, 201):
-        print(f"✅ Đã lưu thành công đài {data['station_id']} ngày {data['draw_date']}")
-    else:
-        print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: {resp.status_code} - {resp.text}")
+    if not SUPABASE_URL or not SUPABASE_KEY or "YOUR_SUPABASE" in SUPABASE_URL:
+        print(f"⚠️ Chưa có SUPABASE_URL / SUPABASE_KEY. Không thể lưu đài {data.get('station_id')}")
+        return
+    endpoint = f"{SUPABASE_URL.rstrip('/')}/rest/v1/draw_results"
+    try:
+        resp = requests.post(endpoint, json=data, headers=HEADERS_SUPABASE, timeout=10)
+        if resp.status_code in (200, 201):
+            print(f"✅ Đã lưu thành công đài {data['station_id']} ngày {data['draw_date']}")
+        else:
+            print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: {resp.status_code} - {resp.text}")
+    except Exception as e:
+        print(f"❌ Lỗi kết nối Supabase [{data['station_id']}]: {e}")
 
 def clean_rolling_50(station_id):
-    if not SUPABASE_URL:
+    if not SUPABASE_URL or not SUPABASE_KEY or "YOUR_SUPABASE" in SUPABASE_URL:
         return
-    url = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=id&order=draw_date.desc&offset=50"
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/draw_results?station_id=eq.{station_id}&select=id&order=draw_date.desc&offset=50"
     try:
-        res = requests.get(url, headers=HEADERS_SUPABASE).json()
+        res = requests.get(url, headers=HEADERS_SUPABASE, timeout=10).json()
         if res and isinstance(res, list) and len(res) > 0:
             old_ids = [str(row['id']) for row in res]
-            delete_url = f"{SUPABASE_URL}/rest/v1/draw_results?id=in.({','.join(old_ids)})"
-            requests.delete(delete_url, headers=HEADERS_SUPABASE)
+            delete_url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/draw_results?id=in.({','.join(old_ids)})"
+            requests.delete(delete_url, headers=HEADERS_SUPABASE, timeout=10)
             print(f"🧹 Đã dọn dẹp {len(old_ids)} kỳ cũ của đài {station_id}.")
     except Exception as e:
         print(f"Lỗi dọn dẹp đài {station_id}: {e}")
@@ -198,7 +210,11 @@ if __name__ == '__main__':
     
     print(f"🚀 Bắt đầu tiến trình cào dữ liệu xổ số tự động ngày {today_str}...")
 
-    # 1. Cào Miền Bắc (nạp 50 kỳ nếu chưa đủ 50)
+    if not SUPABASE_URL or not SUPABASE_KEY or "YOUR_SUPABASE" in SUPABASE_URL:
+        print("⚠️ CẢNH BÁO: Chưa cấu hình SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY!")
+        print("-> Vui lòng điền trực tiếp URL/Key vào 2 dòng đầu file scrape_minhngoc.py hoặc cài Secrets trên GitHub.")
+
+    # 1. Cào Miền Bắc (nạp đủ 50 kỳ lịch sử)
     mb_count = get_existing_count("MB")
     if mb_count < 50:
         print(f"🔄 Đài MB mới có {mb_count}/50 kỳ. Đang nạp đủ 50 kỳ lịch sử...")
@@ -216,7 +232,7 @@ if __name__ == '__main__':
             save_to_supabase(item)
             clean_rolling_50("MB")
 
-    # 2. Cào Miền Nam & Miền Trung (nạp lùi ngày để gom đủ 50 kỳ cho từng đài)
+    # 2. Cào Miền Nam & Miền Trung (quét lùi 120 ngày để gom đủ 50 kỳ cho từng đài)
     print(f"🌐 Đang cào dữ liệu cho Miền Nam & Miền Trung...")
     for i in range(120):
         d_str = (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
