@@ -2,20 +2,14 @@ name: Auto Lottery Crawler
 
 on:
   schedule:
-    - cron: '45 9 * * *'   # 16:45 giờ VN (Miền Nam)
-    - cron: '45 10 * * *'  # 17:45 giờ VN (Miền Trung)
-    - cron: '45 11 * * *'  # 18:45 giờ VN (Miền Bắc)
-  workflow_dispatch:
-    inputs:
-      backfill:
-        description: 'Nạp lại 50 kỳ lịch sử (chỉ tick lần đầu)'
-        type: boolean
-        default: false
+    - cron: "45 9 * * *"   # 16:45 Giờ VN (Miền Nam)
+    - cron: "45 10 * * *"  # 17:45 Giờ VN (Miền Trung)
+    - cron: "45 11 * * *"  # 18:45 Giờ VN (Miền Bắc)
+  workflow_dispatch:       # Nút bấm chạy thủ công
 
 jobs:
   run-crawler:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: pip install requests beautifulsoup4 curl_cffi
@@ -32,5 +26,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BACKFILL: ${{ inputs.backfill }}
         run: python scrape_minhngoc.py
