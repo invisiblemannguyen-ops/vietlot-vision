@@ -5,7 +5,7 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
-# 1. Cấu hình kết nối Supabase từ GitHub Secrets
+# 1. Cấu hình kết nối Supabase
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -36,7 +36,7 @@ STATION_MAP = {
 }
 
 def fetch_kqxs_html(path_url):
-    """Cơ chế chống BOT giả lập Chrome qua curl_cffi & requests"""
+    """Giả lập Chrome chống BOT qua curl_cffi & requests"""
     proto = "https"
     domain = "kqxs.vn"
     full_url = f"{proto}://{domain}{path_url}"
@@ -111,7 +111,7 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds.text.strip()
+            label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên chứa nhãn giải
             nums_raw = []
             for td in tds[1:]:
                 nums_raw.extend(re.findall(r'\d+', td.text))
@@ -119,7 +119,7 @@ def parse_mb(html, db_date):
             if not nums_raw:
                 continue
 
-            # Mỗi giải lấy tối đa 3 chữ số cuối (hàng trăm, chục, đơn vị)
+            # Lấy tối đa 3 chữ số cuối
             nums_3d = [n[-3:] for n in nums_raw if len(n) >= 2]
             nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
 
@@ -161,7 +161,7 @@ def parse_mn_mt(html, db_date):
         tds = row.find_all(['td', 'th'])
         if len(tds) <= 1:
             continue
-        prize_label = tds.text.strip()
+        prize_label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên chứa tên giải
 
         for idx, td in enumerate(tds[1:]):
             if idx < len(station_names):
@@ -170,7 +170,6 @@ def parse_mn_mt(html, db_date):
                 if not nums_raw:
                     continue
 
-                # Lấy tối đa 3 chữ số cuối
                 nums_3d = [n[-3:] for n in nums_raw if len(n) >= 2]
                 nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
 
@@ -204,13 +203,13 @@ if __name__ == '__main__':
     station_counts = {}
     total_saved = 0
 
-    # Lùi tối đa 370 ngày (~53 tuần) để gom đủ 50 kỳ cho các đài 1 tuần/lần
+    # Lùi tối đa 370 ngày (~53 tuần) để cào đủ 50 kỳ cho đài 1 tuần/lần
     for day_offset in range(370):
         current_date = today - datetime.timedelta(days=day_offset)
         d_str = current_date.strftime("%d-%m-%Y")
         db_date = current_date.strftime("%Y-%m-%d")
 
-        # 1. Miền Bắc (nếu chưa đủ 50 kỳ)
+        # 1. Miền Bắc
         if station_counts.get("MB", 0) < 50:
             html_mb = fetch_kqxs_html(f"/mien-bac?date={d_str}")
             if html_mb:
@@ -242,7 +241,7 @@ if __name__ == '__main__':
                         total_saved += 1
 
         if day_offset % 10 == 0:
-            print(f"📊 Đã quét {day_offset} ngày lùi lịch | Tổng số bản ghi đã lưu: {total_saved}")
+            print(f"📊 Đã quét {day_offset} ngày lùi lịch | Tổng bản ghi đã lưu: {total_saved}")
 
         time.sleep(0.1)
 
@@ -250,6 +249,5 @@ if __name__ == '__main__':
     for st, cnt in station_counts.items():
         print(f"  - Đài {st}: {cnt}/50 kỳ")
 
-    # Kiểm tra chặn thành công ảo: Nếu không lưu được bản ghi nào, ném lỗi ngắt runner ngay
     if total_saved == 0:
         raise RuntimeError("❌ LỖI RẤT LỚN: Không cào hoặc lưu được bất kỳ bản ghi nào vào Supabase!")
