@@ -50,7 +50,7 @@ def scrape_minhngoc_mb(date_str):
     try:
         res = requests.get(url, headers=headers, timeout=15)
         if res.status_code != 200:
-            print(f"⚠️ HTTP Status {res.status_code} khi tải {url}")
+            print(f"⚠️ HTTP Status {res.status_code} khi tải MB {date_str}")
             return None
 
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -121,7 +121,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
             if len(tds) <= 1:
                 continue
 
-            prize_name = tds[0].text.strip()  # Sửa lỗi lấy text của ô tên giải
+            prize_name = tds[0].text.strip()
             for idx, td in enumerate(tds[1:]):
                 if idx < len(station_names):
                     st_name = station_names[idx]
@@ -132,7 +132,7 @@ def scrape_minhngoc_mn_mt(region_code, date_str):
                     if prize_name in ['G.8', 'Giải 8', 'Giải Tám']:
                         station_results[st_name]["g8"].extend(nums)
                     elif prize_name in ['ĐB', 'Giải ĐB', 'Giải Đặc Biệt']:
-                        station_results[st_name]["special"] = nums if nums else ""
+                        station_results[st_name]["special"] = nums[0] if nums else ""
 
                     station_results[st_name]["raw_prizes"].extend(nums)
 
@@ -171,12 +171,32 @@ def get_existing_count(station_id):
 def save_to_supabase(data):
     if not data or not SUPABASE_URL:
         return
-    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
-    resp = requests.post(endpoint, json=data, headers=HEADERS_SUPABASE)
-    if resp.status_code in (200, 201):
-        print(f"✅ Đã lưu thành công đài {data['station_id']} ngày {data['draw_date']}")
+    
+    # Xử lý giải đặc biệt thành chuỗi hợp lệ
+    sp = data.get("special_prize", "")
+    if isinstance(sp, list):
+        sp = sp[0] if len(sp) > 0 else ""
     else:
-        print(f"❌ Lỗi lưu Supabase [{data['station_id']}]: {resp.status_code} - {resp.text}")
+        sp = str(sp)
+
+    # Khớp chính xác các cột trên Supabase: station_id, draw_date, special_prize, all_prizes
+    payload = {
+        "station_id": data["station_id"],
+        "draw_date": data["draw_date"],
+        "special_prize": sp,
+        "all_prizes": {
+            "lo_numbers": data.get("lo_numbers", []),
+            "seventh_or_eighth": data.get("seventh_or_eighth", []),
+            "g8": data.get("seventh_or_eighth", [])
+        }
+    }
+
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
+    resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE)
+    if resp.status_code in (200, 201):
+        print(f"✅ Đã lưu thành công đài {payload['station_id']} ngày {payload['draw_date']}")
+    else:
+        print(f"❌ Lỗi lưu Supabase [{payload['station_id']}]: HTTP {resp.status_code} - {resp.text}")
 
 def clean_rolling_50(station_id):
     if not SUPABASE_URL:
