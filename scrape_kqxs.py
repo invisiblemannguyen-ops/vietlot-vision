@@ -44,7 +44,7 @@ def extract_2d_lo(prizes_raw):
 
 # ==================== 1. CÀO MIỀN BẮC ====================
 def scrape_kqxs_mb(date_str):
-    url = f"[suspicious link removed]{date_str}"
+    url = f"kqxs.vn{date_str}"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
