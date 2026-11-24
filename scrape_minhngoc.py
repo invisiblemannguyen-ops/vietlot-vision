@@ -8,17 +8,18 @@ import unicodedata
 import requests
 
 try:
-    from curl_cffi import requests as cffi_requests  # giả lập TLS/trình duyệt Chrome thật
+    from curl_cffi import requests as cffi_requests  # Giả lập TLS / Chrome 120 thực tế
     HAS_CURL_CFFI = True
 except ImportError:
     HAS_CURL_CFFI = False
+
 from bs4 import BeautifulSoup
 
 # ===========================================================================
-# CẤU HÌNH: đọc từ biến môi trường (GitHub Secrets). KHÔNG ghi key vào code.
+# CẤU HÌNH: Đọc từ biến môi trường (GitHub Secrets / Environment)
 # ===========================================================================
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY", "")
 BACKFILL = os.environ.get("BACKFILL", "").lower() == "true"
 
 HEADERS_SUPABASE = {
@@ -74,9 +75,9 @@ HEADERS_WEB = {
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS_WEB)
 
-# ---- CƠ CHẾ CHỐNG CHẶN (lấy từ scraper cũ) ----
-MAX_RETRIES = 2                                  # thử lại mỗi trang
-JITTER = (0.8, 1.6) if BACKFILL else (2.0, 4.0)  # nghỉ ngẫu nhiên giữa các request (giây)
+# ---- CƠ CHẾ CHỐNG CHẶN ----
+MAX_RETRIES = 2                                  # Thử lại mỗi trang
+JITTER = (0.8, 1.6) if BACKFILL else (2.0, 4.0)  # Nghỉ ngẫu nhiên giữa các request (giây)
 MAX_FAIL = 6                                     # 6 trang liên tiếp lỗi => coi là bị chặn
 
 fail_streak = {}
@@ -110,7 +111,7 @@ def fetch(url, source):
                 return r.text
             reason = f"HTTP {r.status_code}"
             if r.status_code == 404:
-                is_404 = True  # trang không tồn tại (không phải bị chặn), khỏi thử lại
+                is_404 = True  # Trang không tồn tại (không phải bị chặn), khỏi thử lại
                 break
         except Exception as e:
             reason = type(e).__name__
@@ -147,8 +148,13 @@ def parse_kqsx(html, region, date_str):
     """Đọc trang https://kqsx.vn/ket-qua-ngay/xs{mb|mt|mn}-DD-MM-YYYY.
     Chỉ nhận khi đủ số lượng giải (MB 27 giải, MN/MT 18 giải/đài)."""
     lines = kqsx_lines(html)
-    pat = re.compile(rf"Xổ số miền {REGION_WORD[region]}\s+{date_str}", re.I)
+    date_pattern = date_str.replace('-', r'[-/]')
+    pat = re.compile(rf"Xổ số\s+miền\s+{REGION_WORD[region]}.*?{date_pattern}", re.I)
     start = next((i for i, l in enumerate(lines) if pat.search(l)), None)
+    if start is None:
+        pat_fallback = re.compile(rf"miền\s+{REGION_WORD[region]}.*?{date_pattern}", re.I)
+        start = next((i for i, l in enumerate(lines) if pat_fallback.search(l)), None)
+
     if start is None:
         return []
 
@@ -187,14 +193,14 @@ def parse_kqsx(html, region, date_str):
         return []
     for k, c in MN_MT_EXPECTED.items():
         if len(data.get(k, [])) != c * n:
-            return []  # chưa quay xong hoặc cấu trúc trang khác
+            return []  # Chưa quay xong hoặc cấu trúc trang khác
     records = []
     for si, name in enumerate(names):
         st_id = STATION_MAP.get(name)
         if not st_id:
             print(f"⚠️ Chưa có trong STATION_MAP: '{name}'")
             continue
-        per = {k: data[k][si::n] for k in MN_MT_EXPECTED}  # bảng xếp theo hàng: đài thứ si = phần tử si, si+n, ...
+        per = {k: data[k][si::n] for k in MN_MT_EXPECTED}  # Bảng xếp theo hàng
         allp = [x for k in MN_MT_EXPECTED for x in per[k]]
         records.append({
             "station_id": st_id,
@@ -234,8 +240,13 @@ def parse_minhngoc_mb(html, date_str):
     if not special or not prizes_raw:
         return []
     db_date = datetime.datetime.strptime(date_str, "%d-%m-%Y").strftime("%Y-%m-%d")
-    return [{"station_id": "MB", "draw_date": db_date, "special_prize": special,
-             "seventh_or_eighth": g7, "lo_numbers": extract_2d_lo(prizes_raw)}]
+    return [{
+        "station_id": "MB",
+        "draw_date": db_date,
+        "special_prize": special,
+        "seventh_or_eighth": g7,
+        "lo_numbers": extract_2d_lo(prizes_raw)
+    }]
 
 
 def parse_minhngoc_mn_mt(html, date_str):
@@ -269,8 +280,13 @@ def parse_minhngoc_mn_mt(html, date_str):
     for name, d in res.items():
         st_id = STATION_MAP.get(name)
         if st_id and d["raw"] and d["special"]:
-            out.append({"station_id": st_id, "draw_date": db_date, "special_prize": d["special"],
-                        "seventh_or_eighth": d["g8"], "lo_numbers": extract_2d_lo(d["raw"])})
+            out.append({
+                "station_id": st_id,
+                "draw_date": db_date,
+                "special_prize": d["special"],
+                "seventh_or_eighth": d["g8"],
+                "lo_numbers": extract_2d_lo(d["raw"])
+            })
     return out
 
 
@@ -298,6 +314,9 @@ def get_day(region, date_str):
 
 # ==================== LƯU & DỌN DẸP SUPABASE ====================
 def save_to_supabase(data):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print(f"⚠️ Chưa cấu hình SUPABASE_URL hoặc SUPABASE_KEY. Bỏ qua lưu đài {data.get('station_id')}")
+        return False
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date"
     try:
         resp = requests.post(endpoint, json=data, headers=HEADERS_SUPABASE, timeout=10)
@@ -312,11 +331,13 @@ def save_to_supabase(data):
 
 def clean_rolling_50(station_id):
     """Giữ đúng 50 kỳ mới nhất của mỗi đài."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
     url = (f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}"
            f"&select=id&order=draw_date.desc&offset=50")
     try:
         res = requests.get(url, headers=HEADERS_SUPABASE, timeout=10).json()
-        if res and isinstance(res, list):
+        if res and isinstance(res, list) and len(res) > 0:
             old_ids = [str(r["id"]) for r in res]
             requests.delete(f"{SUPABASE_URL}/rest/v1/draw_results?id=in.({','.join(old_ids)})",
                             headers=HEADERS_SUPABASE, timeout=10)
@@ -330,9 +351,9 @@ if __name__ == "__main__":
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
     print(f"🚀 Bắt đầu cào {today:%d-%m-%Y} (backfill={BACKFILL}, curl_cffi={HAS_CURL_CFFI})")
 
-    # Chạy thường: hôm nay + hôm qua (tự vá nếu lỡ 1 lần chạy). Backfill: nạp đủ lịch sử.
+    # Chạy thường: hôm nay + hôm qua. Backfill: nạp đủ lịch sử.
     mb_days = 50 if BACKFILL else 2
-    mnmt_days = 350 if BACKFILL else 2  # mỗi đài MN/MT ~1 kỳ/tuần => 50 kỳ ≈ 350 ngày
+    mnmt_days = 350 if BACKFILL else 2  # Mỗi đài MN/MT ~1 kỳ/tuần => 50 kỳ ≈ 350 ngày
 
     saved, touched = 0, set()
 
