@@ -25,15 +25,29 @@ STATION_MAP = {
     "Tây Ninh": "TAYNINH", "An Giang": "ANGIANG", "Bình Thuận": "BINHTHUAN",
     "Vĩnh Long": "VINHLONG", "Bình Dương": "BINHDUONG", "Trà Vinh": "TRAVINH",
     "Long An": "LONGAN", "Bình Phước": "BINHPHUOC", "Hậu Giang": "HAUGIANG",
-    "Tiền Giang": "TIENGIANG", "Kiên Giang": "KIENGIANG", "Đà Lạt": "DALAT",
+    "Tiền Giang": "TIENGIANG", "Kiên Giang": "KIENGIANG", "Đà Lạt": "DALAT", "Lâm Đồng": "DALAT",
     # Miền Trung
-    "Thừa Thiên Huế": "TTHUE", "T.T.Huế": "TTHUE", "Phú Yên": "PHUYEN", "Đắc Lắc": "DAKLAK", "Đắk Lắk": "DAKLAK", "Quảng Nam": "QUANGNAM",
+    "Thừa Thiên Huế": "TTHUE", "T.T.Huế": "TTHUE", "TTHuế": "TTHUE", "Huế": "TTHUE",
+    "Phú Yên": "PHUYEN", "Đắc Lắc": "DAKLAK", "Đắk Lắk": "DAKLAK", "Quảng Nam": "QUANGNAM",
     "Đà Nẵng": "DANANG", "Khánh Hòa": "KHANHHOA", "Bình Định": "BINHDINH", "Quảng Trị": "QUANGTRI",
     "Quảng Bình": "QUANGBINH", "Gia Lai": "GIALAI", "Ninh Thuận": "NINHTHUAN",
     "Quảng Ngãi": "QUANGNGAI", "Đắc Nông": "DAKNONG", "Đắk Nông": "DAKNONG", "Kon Tum": "KONTUM",
     # Miền Bắc
     "Miền Bắc": "MB", "MB": "MB"
 }
+
+def get_station_id(name):
+    """Hàm tra cứu linh hoạt mã đài, bỏ qua dấu chấm và viết hoa/thường"""
+    if not name:
+        return None
+    clean = re.sub(r'\s+', ' ', name.strip())
+    if clean in STATION_MAP:
+        return STATION_MAP[clean]
+    clean_no_dot = clean.replace('.', '').lower()
+    for k, v in STATION_MAP.items():
+        if k.lower() == clean.lower() or k.replace('.', '').lower() == clean_no_dot:
+            return v
+    return None
 
 def fetch_kqxs_html(path_url):
     """Giả lập Chrome chống BOT qua curl_cffi & requests"""
@@ -111,7 +125,7 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên chứa nhãn giải
+            label = tds[0].text.strip()
             nums_raw = []
             for td in tds[1:]:
                 nums_raw.extend(re.findall(r'\d+', td.text))
@@ -119,7 +133,6 @@ def parse_mb(html, db_date):
             if not nums_raw:
                 continue
 
-            # Lấy tối đa 3 chữ số cuối
             nums_3d = [n[-3:] for n in nums_raw if len(n) >= 2]
             nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
 
@@ -154,18 +167,27 @@ def parse_mn_mt(html, db_date):
     if not header_row:
         return []
 
-    station_names = [td.text.strip() for td in header_row.find_all(['td', 'th']) if td.text.strip()]
-    st_data = {name: {"special_3d": "", "g8_3d": [], "prizes_3d": [], "lo_2d": []} for name in station_names}
+    # SỬA LỖI: Bỏ qua ô tiêu đề cột 1 [1:], chỉ lấy tên các đài từ cột 2 trở đi
+    header_cells = header_row.find_all(['td', 'th'])
+    if len(header_cells) <= 1:
+        return []
+
+    station_names = [re.sub(r'\s+', ' ', cell.text.strip()) for cell in header_cells[1:]]
+    st_data = {name: {"special_3d": "", "g8_3d": [], "prizes_3d": [], "lo_2d": []} for name in station_names if name}
 
     for row in box_table.find_all('tr'):
         tds = row.find_all(['td', 'th'])
         if len(tds) <= 1:
             continue
-        prize_label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên chứa tên giải
+
+        prize_label = tds[0].text.strip()
 
         for idx, td in enumerate(tds[1:]):
             if idx < len(station_names):
                 st_name = station_names[idx]
+                if not st_name or st_name not in st_data:
+                    continue
+
                 nums_raw = re.findall(r'\d+', td.text)
                 if not nums_raw:
                     continue
@@ -183,7 +205,7 @@ def parse_mn_mt(html, db_date):
 
     records = []
     for name, data in st_data.items():
-        st_id = STATION_MAP.get(name)
+        st_id = get_station_id(name)
         if st_id and data["prizes_3d"]:
             records.append({
                 "station_id": st_id,
