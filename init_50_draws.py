@@ -23,7 +23,7 @@ STATION_MAP = {
     "ĐỒNG THÁP": "DONGTHAP", "DONG THAP": "DONGTHAP", "CÀ MAU": "CAMAU", "CA MAU": "CAMAU",
     "BẾN TRE": "BENTRE", "BEN TRE": "BENTRE", "VŨNG TÀU": "VUNGTAU", "VUNG TAU": "VUNGTAU", "BẠC LIÊU": "BACLIEU", "BAC LIEU": "BACLIEU",
     "ĐỒNG NAI": "DONGNAI", "DONG NAI": "DONGNAI", "CẦN THƠ": "CANTHO", "CAN THO": "CANTHO", "SÓC TRĂNG": "SOCTRANG", "SOC TRANG": "SOCTRANG",
-    "TÂY NINH": "TAYNINH", "TAY NINH": "TAYNINH", "AN GIANG": "ANGIANG", "AN GIANG": "ANGIANG", "BÌNH THUẬN": "BINHTHUAN", "BINH THUAN": "BINHTHUAN",
+    "TÂY NINH": "TAYNINH", "TAY NINH": "TAYNINH", "AN GIANG": "ANGIANG", "BÌNH THUẬN": "BINHTHUAN", "BINH THUAN": "BINHTHUAN",
     "VĨNH LONG": "VINHLONG", "VINH LONG": "VINHLONG", "BÌNH DƯƠNG": "BINHDUONG", "BINH DUONG": "BINHDUONG", "TRÀ VINH": "TRAVINH", "TRA VINH": "TRAVINH",
     "LONG AN": "LONGAN", "LONG AN": "LONGAN", "BÌNH PHƯỚC": "BINHPHUOC", "BINH PHUOC": "BINHPHUOC", "HẬU GIANG": "HAUGIANG", "HAU GIANG": "HAUGIANG",
     "TIỀN GIANG": "TIENGIANG", "TIEN GIANG": "TIENGIANG", "KIÊN GIANG": "KIENGIANG", "KIEN GIANG": "KIENGIANG", "ĐÀ LẠT": "DALAT", "DA LAT": "DALAT", "LÂM ĐỒNG": "DALAT",
@@ -37,20 +37,26 @@ STATION_MAP = {
     "MIỀN BẮC": "MB", "MB": "MB"
 }
 
-def get_station_id(name):
-    if not name:
+def get_station_id(cell_text):
+    if not cell_text:
         return None
-    clean = re.sub(r'\s+', ' ', str(name).strip()).upper()
-    if clean in STATION_MAP:
-        return STATION_MAP[clean]
-    clean_no_dot = clean.replace('.', '').strip()
+    clean = re.sub(r'\s+', ' ', str(cell_text).strip()).upper()
+    if any(w in clean for w in ['MIỀN NAM', 'MIỀN TRUNG', 'KẾT QUẢ', 'LỊCH SỬ']):
+        return None
+
+    clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', clean)
+    clean_core_no_dot = clean_core.replace('.', '').strip()
+
+    if clean_core in STATION_MAP:
+        return STATION_MAP[clean_core]
     for k, v in STATION_MAP.items():
-        if k.upper() == clean or k.replace('.', '').upper() == clean_no_dot:
+        if k.upper() == clean_core or k.replace('.', '').upper() == clean_core_no_dot:
             return v
-    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x), reverse=True):
-        k_clean = k.upper()
-        if k_clean in clean or k_clean.replace('.', '') in clean_no_dot:
+
+    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+        if k.upper() in clean_core:
             return v
+
     return None
 
 # ==================== 3. CHỐNG BOT KQXS.VN ====================
@@ -77,17 +83,14 @@ def fetch_kqxs_html(path_url):
         pass
     return None
 
-# ==================== 4. LƯU SUPABASE (HỖ TRỢ UPSERT CẬP NHẬT GHI ĐÈ) ====================
+# ==================== 4. LƯU SUPABASE (LƯU ĐẦY ĐỦ CÁC GIẢI) ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
         return False
 
-    sp = data.get("special_prize", "")
-    if isinstance(sp, list):
-        sp_str = str(sp[0]).strip()[-3:] if len(sp) > 0 else ""
-    else:
-        sp_str = str(sp).strip()[-3:] if str(sp).strip() else ""
+    sp_raw = data.get("special_prize", "")
+    sp_str = str(sp_raw).strip()[-3:] if str(sp_raw).strip() else ""
 
     payload = {
         "station_id": data["station_id"],
@@ -96,17 +99,17 @@ def save_to_supabase(data):
         "all_prizes": {
             "special_prize": sp_str,
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
-            "lo_numbers": data.get("lo_numbers", []),
-            "raw_prizes": data.get("raw_prizes", [])
+            "prizes_by_tier": data.get("prizes_tier", {}),
+            "raw_prizes": data.get("raw_prizes", []),
+            "lo_numbers": data.get("lo_numbers", [])
         }
     }
 
-    # Parameter ?on_conflict=station_id,draw_date giúp tự động UPSERT
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date"
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=15)
         if resp.status_code in (200, 201, 204, 409):
-            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB (3D): '{sp_str}' | Tổng số giải: {len(data.get('raw_prizes', []))} | Lô: {len(data.get('lo_numbers', []))} số")
+            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB (3D): '{sp_str}' | Đủ {len(data.get('raw_prizes', []))} giải 3D | Đủ {len(data.get('lo_numbers', []))} lô 2D")
             return True
         else:
             print(f"  ❌ [LỖI LƯU SUPABASE] Đài {payload['station_id']}: {resp.status_code} - {resp.text}")
@@ -134,14 +137,16 @@ def parse_mb(html, db_date):
     lo_2d = []
     special_prize_3d = ""
     g7_list = []
+    prizes_tier = {}
 
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
             label = tds[0].get_text(separator=' ').strip()
+            label_upper = label.upper()
             
-            # Lọc bỏ dòng Mã đặc biệt / Ký hiệu
-            if any(k in label.upper() for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ ĐẶC BIỆT']):
+            # Bỏ qua dòng Mã đặc biệt / Ký hiệu
+            if any(k in label_upper for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ ĐẶC BIỆT', 'MÃ']):
                 continue
 
             nums_raw = []
@@ -150,10 +155,11 @@ def parse_mb(html, db_date):
             if not nums_raw:
                 continue
 
-            # Chỉ lấy số hợp lệ có độ dài >= 2 chữ số
             nums_valid = [n for n in nums_raw if len(n) >= 2]
             nums_3d = [n[-3:] for n in nums_valid]
             nums_2d = [n[-2:] for n in nums_valid]
+
+            prizes_tier[label] = nums_3d
 
             if re.search(r'ĐB|Đặc biệt|GĐB', label, re.I):
                 special_prize_3d = nums_3d[0] if nums_3d else ""
@@ -172,10 +178,11 @@ def parse_mb(html, db_date):
         "special_prize": special_prize_3d,
         "seventh_or_eighth": g7_list,
         "lo_numbers": lo_2d,
-        "raw_prizes": prizes_3d
+        "raw_prizes": prizes_3d,
+        "prizes_tier": prizes_tier
     }
 
-# ==================== 6. PARSER MIỀN NAM & TRUNG (CHUẨN 18 GIẢI/ĐÀI) ====================
+# ==================== 6. PARSER MIỀN NAM & TRUNG (BỎ CHỌN NHẦM BẢNG, CHUẨN 18 GIẢI/ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -185,26 +192,39 @@ def parse_mn_mt(html, db_date):
     target_table = None
     col_stations = {}
 
+    # Quét tất cả các bảng để tìm bảng có số cột đài nhiều nhất
     for t in tables:
         rows = t.find_all('tr')
-        for r in rows[:4]:
+        best_row_stations = {}
+        for r in rows:
             cells = r.find_all(['td', 'th'])
+            if len(cells) <= 1:
+                continue
+            row_map = {}
             for idx, cell in enumerate(cells):
-                cell_txt = cell.get_text(separator=' ').strip()
-                st_id = get_station_id(cell_txt)
+                txt = cell.get_text(separator=' ').strip()
+                st_id = get_station_id(txt)
                 if st_id:
-                    col_stations[idx] = st_id
-            if col_stations:
-                target_table = t
-                break
-        if target_table:
-            break
+                    row_map[idx] = st_id
+            if len(row_map) > len(best_row_stations):
+                best_row_stations = row_map
+        if len(best_row_stations) > len(col_stations):
+            col_stations = best_row_stations
+            target_table = t
 
     if not target_table or not col_stations:
         return []
 
     rows = target_table.find_all('tr')
-    st_data = {st_id: {"special_prize": "", "g8_3d": [], "prizes_3d": [], "lo_2d": []} for st_id in col_stations.values()}
+    st_data = {
+        st_id: {
+            "special_prize": "",
+            "g8_3d": [],
+            "prizes_tier": {},
+            "prizes_3d": [],
+            "lo_2d": []
+        } for st_id in col_stations.values()
+    }
 
     for row in rows:
         tds = row.find_all(['td', 'th'])
@@ -214,8 +234,7 @@ def parse_mn_mt(html, db_date):
         prize_label = tds[0].get_text(separator=' ').strip()
         label_upper = prize_label.upper()
 
-        # Chỉ đọc các dòng Giải thưởng chính thức, bỏ qua bảng Lô tô phụ
-        if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
+        if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
             continue
         if any(ignore in label_upper for ignore in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'KÝ HIỆU']):
             continue
@@ -230,6 +249,8 @@ def parse_mn_mt(html, db_date):
 
                 nums_3d = [n[-3:] for n in nums_raw if len(n) >= 2]
                 nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
+
+                st_data[st_id]["prizes_tier"][prize_label] = nums_3d
 
                 if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM']):
                     st_data[st_id]["g8_3d"].extend(nums_3d)
@@ -248,7 +269,8 @@ def parse_mn_mt(html, db_date):
                 "special_prize": data["special_prize"],
                 "seventh_or_eighth": data["g8_3d"],
                 "lo_numbers": data["lo_2d"],
-                "raw_prizes": data["prizes_3d"]
+                "raw_prizes": data["prizes_3d"],
+                "prizes_tier": data["prizes_tier"]
             })
     return records
 
@@ -258,7 +280,7 @@ if __name__ == '__main__':
     d_str = today.strftime("%d-%m-%Y")
     db_date = today.strftime("%Y-%m-%d")
 
-    print(f"🚀 [CÀO HÔM NAY] Bắt đầu cào kết quả ngày HÔM NAY ({d_str}) cho toàn bộ các đài...")
+    print(f"🚀 [CÀO HÔM NAY] Bắt đầu cào kết quả ngày HÔM NAY ({d_str}) cho tất cả các đài...")
     total_saved = 0
     saved_stations = []
 
@@ -288,6 +310,6 @@ if __name__ == '__main__':
                 total_saved += 1
                 saved_stations.append(rec["station_id"])
 
-    print(f"\n🎉 [HOÀN TẤT CÀO HÔM NAY] Đã lưu/cập nhật thành công {total_saved} đài: {', '.join(saved_stations)}")
+    print(f"\n🎉 [HOÀN TẤT CÀO HÔM NAY] Đã lưu thành công {total_saved} đài: {', '.join(saved_stations)}")
     if total_saved == 0:
         raise RuntimeError("❌ LỖI: Không cào được đài nào hôm nay!")
