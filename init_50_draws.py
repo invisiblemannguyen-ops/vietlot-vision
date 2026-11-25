@@ -83,7 +83,7 @@ def fetch_kqxs_html(path_url):
         pass
     return None
 
-# ==================== 4. LƯU SUPABASE (LƯU ĐẦY ĐỦ CÁC GIẢI) ====================
+# ==================== 4. LƯU SUPABASE ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
@@ -109,7 +109,7 @@ def save_to_supabase(data):
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=15)
         if resp.status_code in (200, 201, 204, 409):
-            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB (3D): '{sp_str}' | Đủ {len(data.get('raw_prizes', []))} giải 3D | Đủ {len(data.get('lo_numbers', []))} lô 2D")
+            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB (3D): '{sp_str}' | Đủ {len(data.get('raw_prizes', []))} giải | Đủ {len(data.get('lo_numbers', []))} lô 2D")
             return True
         else:
             print(f"  ❌ [LỖI LƯU SUPABASE] Đài {payload['station_id']}: {resp.status_code} - {resp.text}")
@@ -118,7 +118,7 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT LƯU] Đài {payload['station_id']}: {e}")
         return False
 
-# ==================== 5. PARSER MIỀN BẮC (CHUẨN 27 GIẢI) ====================
+# ==================== 5. PARSER MIỀN BẮC ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -142,10 +142,9 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds[0].get_text(separator=' ').strip()
+            label = tds.get_text(separator=' ').strip()
             label_upper = label.upper()
             
-            # Bỏ qua dòng Mã đặc biệt / Ký hiệu
             if any(k in label_upper for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ ĐẶC BIỆT', 'MÃ']):
                 continue
 
@@ -162,7 +161,7 @@ def parse_mb(html, db_date):
             prizes_tier[label] = nums_3d
 
             if re.search(r'ĐB|Đặc biệt|GĐB', label, re.I):
-                special_prize_3d = nums_3d[0] if nums_3d else ""
+                special_prize_3d = nums_3d if nums_3d else ""
             elif re.search(r'G7|Giải 7|Giải Bảy', label, re.I):
                 g7_list.extend(nums_3d)
 
@@ -182,7 +181,7 @@ def parse_mb(html, db_date):
         "prizes_tier": prizes_tier
     }
 
-# ==================== 6. PARSER MIỀN NAM & TRUNG (TÁCH ĐỦ TỪNG ĐÀI) ====================
+# ==================== 6. PARSER MIỀN NAM & TRUNG ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -230,7 +229,7 @@ def parse_mn_mt(html, db_date):
         if len(tds) <= 1:
             continue
 
-        prize_label = tds[0].get_text(separator=' ').strip()
+        prize_label = tds.get_text(separator=' ').strip()
         label_upper = prize_label.upper()
 
         if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
@@ -254,7 +253,7 @@ def parse_mn_mt(html, db_date):
                 if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM']):
                     st_data[st_id]["g8_3d"].extend(nums_3d)
                 elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
-                    st_data[st_id]["special_prize"] = nums_3d[0] if nums_3d else ""
+                    st_data[st_id]["special_prize"] = nums_3d if nums_3d else ""
 
                 st_data[st_id]["prizes_3d"].extend(nums_3d)
                 st_data[st_id]["lo_2d"].extend(nums_2d)
