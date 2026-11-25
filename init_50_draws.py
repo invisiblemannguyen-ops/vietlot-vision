@@ -1,6 +1,7 @@
 import os
 import re
 import datetime
+import unicodedata
 import requests
 from bs4 import BeautifulSoup
 
@@ -15,8 +16,8 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# ==================== 2. MẢNG ÁNH CHIẾU ĐÀI ====================
-STATION_MAP = {
+# ==================== 2. MẢNG ÁNH CHIẾU ĐÀI (CÓ DẤU & KHÔNG DẤU) ====================
+STATION_MAP_RAW = {
     # Miền Nam
     "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "HO CHI MINH": "TPHCM",
     "ĐỒNG THÁP": "DONGTHAP", "CÀ MAU": "CAMAU", "BẾN TRE": "BENTRE", "VŨNG TÀU": "VUNGTAU", "BẠC LIÊU": "BACLIEU",
@@ -33,31 +34,46 @@ STATION_MAP = {
     "MIỀN BẮC": "MB", "MB": "MB"
 }
 
+def remove_accents(text):
+    if not text:
+        return ""
+    text = unicodedata.normalize('NFD', str(text))
+    text = re.sub(r'[\u0300-\u036f]', '', text)
+    return text.replace('Đ', 'D').replace('đ', 'd')
+
+# Tự động sinh danh mục từ khóa có dấu, không dấu và viết liền
+STATION_MAP = {}
+for k, v in STATION_MAP_RAW.items():
+    STATION_MAP[k.upper()] = v
+    unacc = remove_accents(k).upper()
+    STATION_MAP[unacc] = v
+    STATION_MAP[unacc.replace(' ', '')] = v
+
 def get_station_id(cell_text):
     if not cell_text:
         return None
-    clean = re.sub(r'\s+', ' ', str(cell_text).strip()).upper()
-    if len(clean) > 30:
-        return None
-    # Bỏ qua các ô chứa tiêu đề trang hoặc banner gộp nhiều đài
-    if any(w in clean for w in ['MIỀN NAM', 'MIỀN TRUNG', 'KẾT QUẢ', 'LỊCH SỬ', 'BẢNG', 'TRỰC TIẾP']):
+    raw = str(cell_text).strip()
+    clean = re.sub(r'\s+', ' ', raw).upper()
+    
+    # Bỏ qua dòng tiêu đề banner gộp đài hoặc tiêu đề trang
+    if any(ignore in clean for ignore in ['KẾT QUẢ', 'MIỀN NAM', 'MIỀN TRUNG', 'LỊCH SỬ', 'BẢNG', 'TRỰC TIẾP', 'XỔ SỐ MIỀN']):
         return None
     if any(sep in clean for sep in ['-', ',', '/', ' VÀ ']):
         return None
+        
     clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', clean).strip()
-    clean_no_dot = clean_core.replace('.', '').strip()
-
+    unacc_core = remove_accents(clean_core).upper()
+    
     if clean_core in STATION_MAP:
         return STATION_MAP[clean_core]
-    for k, v in STATION_MAP.items():
-        if k.upper() == clean_core or k.replace('.', '').upper() == clean_no_dot:
-            return v
-    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x), reverse=True):
-        if k.upper() in clean_core:
+    if unacc_core in STATION_MAP:
+        return STATION_MAP[unacc_core]
+        
+    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+        if k in clean_core or k in unacc_core:
             return v
     return None
 
-# ==================== 3. LẤY HTML KQXS.VN (CHỐNG BOT) ====================
 def fetch_kqxs_html(path_url):
     domain = "kqxs.vn"
     full_url = f"https://{domain}{path_url}"
@@ -80,7 +96,6 @@ def fetch_kqxs_html(path_url):
         pass
     return None
 
-# ==================== 4. HÀM CHUẨN HÓA SỐ (3D/2D) ====================
 def format_prize_number(raw_str):
     """Số >= 3 chữ số lấy 3D. Giải 8/7 (2 chữ số) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
@@ -90,7 +105,7 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
-# ==================== 5. LƯU SUPABASE GỌN GÀNG ====================
+# ==================== 3. LƯU SUPABASE GỌN GÀNG ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
@@ -106,7 +121,7 @@ def save_to_supabase(data):
         "all_prizes": {
             "special_prize": data["special_prize"],
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
-            "raw_prizes": raw_prizes, # Mảng 18/27 giải (3D & 2D G8)
+            "raw_prizes": raw_prizes, # Mảng 18/27 giải
             "lo_numbers": lo_2d       # Mảng 18/27 lô 2D
         }
     }
@@ -124,7 +139,7 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT] {payload['station_id']}: {e}")
         return False
 
-# ==================== 6. PARSER MIỀN BẮC (27 GIẢI) ====================
+# ==================== 4. PARSER MIỀN BẮC (27 GIẢI) ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -134,7 +149,7 @@ def parse_mb(html, db_date):
             box_table = t
             break
     if not box_table:
-        box_table = tables[0] if tables else None
+        box_table = tables if tables else None
     if not box_table:
         return None
 
@@ -175,7 +190,7 @@ def parse_mb(html, db_date):
         "raw_prizes": raw_prizes
     }
 
-# ==================== 7. PARSER MIỀN NAM & TRUNG (TÁCH CỘT TỪNG ĐÀI ĐỘC LẬP) ====================
+# ==================== 5. PARSER MIỀN NAM & TRUNG (TÁCH CỘT TỪNG ĐÀI ĐỘC LẬP) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -185,7 +200,7 @@ def parse_mn_mt(html, db_date):
     target_table = None
     col_stations = {}
 
-    # BƯỚC 1: Xác định đúng bảng và ánh xạ vị trí các cột đài độc lập
+    # BƯỚC 1: Xác định bảng chuẩn và ánh xạ chính xác vị trí cột của từng đài
     for t in tables:
         rows = t.find_all('tr')
         best_row_stations = {}
@@ -195,7 +210,6 @@ def parse_mn_mt(html, db_date):
                 continue
             row_map = {}
             for idx, cell in enumerate(cells):
-                # Bỏ qua ô banner tiêu đề gộp
                 if int(cell.get('colspan', 1)) > 1:
                     continue
                 txt = cell.get_text(separator=' ').strip()
@@ -214,7 +228,7 @@ def parse_mn_mt(html, db_date):
     rows = target_table.find_all('tr')
     st_data = {st_id: {"special_prize": "", "g8": [], "raw_prizes": []} for st_id in col_stations.values()}
 
-    # BƯỚC 2: Quét ngang từng hàng giải và lấy trọn gói ô tds[col_idx] của đài tương ứng
+    # BƯỚC 2: Quét ngang từng dòng giải, lấy trọn gói ô tds[col_idx] nạp cho đài tương ứng
     for row in rows:
         tds = row.find_all(['td', 'th'])
         if len(tds) <= 1:
@@ -242,7 +256,7 @@ def parse_mn_mt(html, db_date):
 
                 st_data[st_id]["raw_prizes"].extend(formatted_nums)
 
-    # BƯỚC 3: Xuất ra các bản ghi đài độc lập (mỗi đài MN/MT đủ 18 giải)
+    # BƯỚC 3: Tạo danh sách các đài độc lập (mỗi đài MN/MT đúng 18 giải)
     records = []
     for st_id, data in st_data.items():
         if data["raw_prizes"]:
@@ -285,4 +299,4 @@ if __name__ == '__main__':
             if save_to_supabase(rec):
                 total_saved += 1
 
-    print(f"\n🎉 [HOÀN TẤT] Tổng cộng đã lưu {total_saved} đài vào Supabase!")
+    print(f"\n🎉 [HOÀN TẤT] Tổng cộng đã lưu {total_saved} đài độc lập vào Supabase!")
