@@ -16,14 +16,14 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# ==================== 2. MẢNG ÁNH CHIẾU TÊN ĐÀI ====================
+# ==================== 2. MẢNG ÁNH CHIẾU TÊN ĐÀI KQXS.VN ====================
 STATION_MAP = {
     # Miền Nam
     "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "HO CHI MINH": "TPHCM",
     "ĐỒNG THÁP": "DONGTHAP", "DONG THAP": "DONGTHAP", "CÀ MAU": "CAMAU", "CA MAU": "CAMAU",
     "BẾN TRE": "BENTRE", "BEN TRE": "BENTRE", "VŨNG TÀU": "VUNGTAU", "VUNG TAU": "VUNGTAU", "BẠC LIÊU": "BACLIEU", "BAC LIEU": "BACLIEU",
     "ĐỒNG NAI": "DONGNAI", "DONG NAI": "DONGNAI", "CẦN THƠ": "CANTHO", "CAN THO": "CANTHO", "SÓC TRĂNG": "SOCTRANG", "SOC TRANG": "SOCTRANG",
-    "TÂY NINH": "TAYNINH", "TAY NINH": "TAYNINH", "AN GIANG": "ANGIANG", "BÌNH THUẬN": "BINHTHUAN", "BINH THUAN": "BINHTHUAN",
+    "TÂY NINH": "TAYNINH", "TAY NINH": "TAYNINH", "AN GIANG": "ANGIANG", "AN GIANG": "ANGIANG", "BÌNH THUẬN": "BINHTHUAN", "BINH THUAN": "BINHTHUAN",
     "VĨNH LONG": "VINHLONG", "VINH LONG": "VINHLONG", "BÌNH DƯƠNG": "BINHDUONG", "BINH DUONG": "BINHDUONG", "TRÀ VINH": "TRAVINH", "TRA VINH": "TRAVINH",
     "LONG AN": "LONGAN", "LONG AN": "LONGAN", "BÌNH PHƯỚC": "BINHPHUOC", "BINH PHUOC": "BINHPHUOC", "HẬU GIANG": "HAUGIANG", "HAU GIANG": "HAUGIANG",
     "TIỀN GIANG": "TIENGIANG", "TIEN GIANG": "TIENGIANG", "KIÊN GIANG": "KIENGIANG", "KIEN GIANG": "KIENGIANG", "ĐÀ LẠT": "DALAT", "DA LAT": "DALAT", "LÂM ĐỒNG": "DALAT",
@@ -49,7 +49,7 @@ def get_station_id(name):
             return v
     return None
 
-# ==================== 3. HÀM TẢI HTML CHỐNG BOT ====================
+# ==================== 3. CHỐNG BOT KQXS.VN ====================
 def fetch_kqxs_html(path_url):
     proto = "https"
     domain = "kqxs.vn"
@@ -73,7 +73,7 @@ def fetch_kqxs_html(path_url):
         pass
     return None
 
-# ==================== 4. HÀM LƯU VÀO SUPABASE ====================
+# ==================== 4. LƯU SUPABASE ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
@@ -100,13 +100,13 @@ def save_to_supabase(data):
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
     resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=15)
     if resp.status_code in (200, 201):
-        print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB: {sp_str} | Lô: {len(data.get('lo_numbers', []))} số")
+        print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB: '{sp_str}' | Tổng số giải: {len(data.get('raw_prizes', []))} | Lô: {len(data.get('lo_numbers', []))} số")
         return True
     else:
         print(f"  ❌ [LỖI LƯU] Đài {payload['station_id']}: {resp.status_code} - {resp.text}")
         return False
 
-# ==================== 5. PARSER MIỀN BẮC ====================
+# ==================== 5. PARSER MIỀN BẮC (27 GIẢI) ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     box_table = soup.find('table', class_=re.compile(r'table|kqxs|box-kqxs', re.I))
@@ -121,10 +121,11 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên tds[0]
+            label = tds[0].get_text(separator=' ').strip()
             nums_raw = []
             for td in tds[1:]:
-                nums_raw.extend(re.findall(r'\d+', td.text))
+                # Tách riêng từng số qua separator=' '
+                nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
             if not nums_raw:
                 continue
 
@@ -151,7 +152,7 @@ def parse_mb(html, db_date):
         "raw_prizes": prizes_3d
     }
 
-# ==================== 6. PARSER MIỀN NAM & MIỀN TRUNG ====================
+# ==================== 6. PARSER MIỀN NAM & TRUNG (18 GIẢI/ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     box_table = soup.find('table', class_=re.compile(r'table|kqxs|box-kqxs', re.I))
@@ -163,9 +164,9 @@ def parse_mn_mt(html, db_date):
         return []
 
     header_row = None
-    for r in rows[:3]:
+    for r in rows[:4]:
         cells = r.find_all(['td', 'th'])
-        txts = [c.text.strip() for c in cells]
+        txts = [c.get_text(separator=' ').strip() for c in cells]
         if any(get_station_id(t) for t in txts):
             header_row = r
             break
@@ -176,7 +177,7 @@ def parse_mn_mt(html, db_date):
     header_cells = header_row.find_all(['td', 'th'])
     col_stations = {}
     for idx, cell in enumerate(header_cells):
-        cell_text = cell.text.strip()
+        cell_text = cell.get_text(separator=' ').strip()
         st_id = get_station_id(cell_text)
         if st_id:
             col_stations[idx] = st_id
@@ -191,13 +192,13 @@ def parse_mn_mt(html, db_date):
         if len(tds) <= 1:
             continue
 
-        prize_label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên tds[0]
+        prize_label = tds[0].get_text(separator=' ').strip()
 
         for idx in range(1, len(tds)):
             if idx in col_stations:
                 st_id = col_stations[idx]
                 td = tds[idx]
-                nums_raw = re.findall(r'\d+', td.text)
+                nums_raw = re.findall(r'\d+', td.get_text(separator=' '))
                 if not nums_raw:
                     continue
 
@@ -228,12 +229,12 @@ def parse_mn_mt(html, db_date):
 # ==================== MAIN TEST 1 KỲ (NGÀY HÔM QUA) ====================
 if __name__ == '__main__':
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
-    # Sử dụng ngày HÔM QUA để chắc chắn có đầy đủ kết quả đã xổ
+    # Sử dụng ngày HÔM QUA để đảm bảo kqxs.vn đã có đầy đủ kết quả 3 miền
     test_date = today - datetime.timedelta(days=1)
     d_str = test_date.strftime("%d-%m-%Y")
     db_date = test_date.strftime("%Y-%m-%d")
 
-    print(f"🚀 [TEST 1 KỲ] Cào thử kết quả ngày HÔM QUA ({d_str})...")
+    print(f"🚀 [TEST 1 KỲ KQXS.VN] Cào thử kết quả ngày HÔM QUA ({d_str})...")
     total_saved = 0
 
     # 1. Miền Bắc
@@ -259,4 +260,4 @@ if __name__ == '__main__':
 
     print(f"\n🎉 [KẾT QUẢ TEST] Đã lưu thành công {total_saved} đài vào Supabase!")
     if total_saved == 0:
-        raise RuntimeError("❌ Không cào được đài nào!")
+        raise RuntimeError("❌ LỖI: Không cào được đài nào từ kqxs.vn!")
