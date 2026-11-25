@@ -18,7 +18,7 @@ HEADERS_SUPABASE = {
 # ==================== 2. MẢNG ÁNH CHIẾU ĐÀI ====================
 STATION_MAP = {
     # Miền Nam
-    "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM",
+    "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "HO CHI MINH": "TPHCM",
     "ĐỒNG THÁP": "DONGTHAP", "CÀ MAU": "CAMAU", "BẾN TRE": "BENTRE", "VŨNG TÀU": "VUNGTAU", "BẠC LIÊU": "BACLIEU",
     "ĐỒNG NAI": "DONGNAI", "CẦN THƠ": "CANTHO", "SÓC TRĂNG": "SOCTRANG", "TÂY NINH": "TAYNINH", "AN GIANG": "ANGIANG",
     "BÌNH THUẬN": "BINHTHUAN", "VĨNH LONG": "VINHLONG", "BÌNH DƯƠNG": "BINHDUONG", "TRÀ VINH": "TRAVINH",
@@ -37,9 +37,14 @@ def get_station_id(cell_text):
     if not cell_text:
         return None
     clean = re.sub(r'\s+', ' ', str(cell_text).strip()).upper()
-    if any(w in clean for w in ['MIỀN NAM', 'MIỀN TRUNG', 'KẾT QUẢ', 'LỊCH SỬ']):
+    if len(clean) > 30:
         return None
-    clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', clean)
+    # Bỏ qua các ô chứa tiêu đề trang hoặc banner gộp nhiều đài
+    if any(w in clean for w in ['MIỀN NAM', 'MIỀN TRUNG', 'KẾT QUẢ', 'LỊCH SỬ', 'BẢNG', 'TRỰC TIẾP']):
+        return None
+    if any(sep in clean for sep in ['-', ',', '/', ' VÀ ']):
+        return None
+    clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', clean).strip()
     clean_no_dot = clean_core.replace('.', '').strip()
 
     if clean_core in STATION_MAP:
@@ -129,6 +134,8 @@ def parse_mb(html, db_date):
             box_table = t
             break
     if not box_table:
+        box_table = tables[0] if tables else None
+    if not box_table:
         return None
 
     raw_prizes = []
@@ -168,7 +175,7 @@ def parse_mb(html, db_date):
         "raw_prizes": raw_prizes
     }
 
-# ==================== 7. PARSER MIỀN NAM & TRUNG (18 GIẢI/ĐÀI) ====================
+# ==================== 7. PARSER MIỀN NAM & TRUNG (TÁCH CỘT TỪNG ĐÀI ĐỘC LẬP) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -178,6 +185,7 @@ def parse_mn_mt(html, db_date):
     target_table = None
     col_stations = {}
 
+    # BƯỚC 1: Xác định đúng bảng và ánh xạ vị trí các cột đài độc lập
     for t in tables:
         rows = t.find_all('tr')
         best_row_stations = {}
@@ -187,6 +195,9 @@ def parse_mn_mt(html, db_date):
                 continue
             row_map = {}
             for idx, cell in enumerate(cells):
+                # Bỏ qua ô banner tiêu đề gộp
+                if int(cell.get('colspan', 1)) > 1:
+                    continue
                 txt = cell.get_text(separator=' ').strip()
                 st_id = get_station_id(txt)
                 if st_id:
@@ -203,6 +214,7 @@ def parse_mn_mt(html, db_date):
     rows = target_table.find_all('tr')
     st_data = {st_id: {"special_prize": "", "g8": [], "raw_prizes": []} for st_id in col_stations.values()}
 
+    # BƯỚC 2: Quét ngang từng hàng giải và lấy trọn gói ô tds[col_idx] của đài tương ứng
     for row in rows:
         tds = row.find_all(['td', 'th'])
         if len(tds) <= 1:
@@ -214,23 +226,23 @@ def parse_mn_mt(html, db_date):
         if any(ignore in label_upper for ignore in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ']):
             continue
 
-        for idx in range(1, len(tds)):
-            if idx in col_stations:
-                st_id = col_stations[idx]
-                td = tds[idx]
+        for col_idx, st_id in col_stations.items():
+            if col_idx < len(tds):
+                td = tds[col_idx]
                 nums_raw = re.findall(r'\d+', td.get_text(separator=' '))
                 if not nums_raw:
                     continue
 
                 formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
 
-                if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8']):
+                if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM', 'TÁM']):
                     st_data[st_id]["g8"].extend(formatted_nums)
                 elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
                     st_data[st_id]["special_prize"] = formatted_nums[0] if formatted_nums else ""
 
                 st_data[st_id]["raw_prizes"].extend(formatted_nums)
 
+    # BƯỚC 3: Xuất ra các bản ghi đài độc lập (mỗi đài MN/MT đủ 18 giải)
     records = []
     for st_id, data in st_data.items():
         if data["raw_prizes"]:
@@ -249,7 +261,7 @@ if __name__ == '__main__':
     d_str = today.strftime("%d-%m-%Y")
     db_date = today.strftime("%Y-%m-%d")
 
-    print(f"🚀 [CÀO HÔM NAY] Bắt đầu cào kết quả ngày HÔM NAY ({d_str})...")
+    print(f"🚀 [CÀO HÔM NAY - KQXS.VN] Bắt đầu cào kết quả ngày HÔM NAY ({d_str})...")
     total_saved = 0
 
     # 1. Miền Bắc
@@ -273,4 +285,4 @@ if __name__ == '__main__':
             if save_to_supabase(rec):
                 total_saved += 1
 
-    print(f"\n🎉 [HOÀN TẤT] Đã lưu thành công {total_saved} đài vào Supabase!")
+    print(f"\n🎉 [HOÀN TẤT] Tổng cộng đã lưu {total_saved} đài vào Supabase!")
