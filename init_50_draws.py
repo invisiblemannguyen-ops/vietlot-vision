@@ -15,10 +15,10 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# ==================== 2. MẢNG ÁNH CHIẾU ĐÀI ====================
+# ==================== 2. MẢNG ÁNH CHIẾU ĐÀI KQXS.VN ====================
 STATION_MAP = {
     # Miền Nam
-    "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM",
+    "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "HO CHI MINH": "TPHCM",
     "ĐỒNG THÁP": "DONGTHAP", "CÀ MAU": "CAMAU", "BẾN TRE": "BENTRE", "VŨNG TÀU": "VUNGTAU", "BẠC LIÊU": "BACLIEU",
     "ĐỒNG NAI": "DONGNAI", "CẦN THƠ": "CANTHO", "SÓC TRĂNG": "SOCTRANG", "TÂY NINH": "TAYNINH", "AN GIANG": "ANGIANG",
     "BÌNH THUẬN": "BINHTHUAN", "VĨNH LONG": "VINHLONG", "BÌNH DƯƠNG": "BINHDUONG", "TRÀ VINH": "TRAVINH",
@@ -37,7 +37,7 @@ def get_station_id(cell_text):
     if not cell_text:
         return None
     clean = re.sub(r'\s+', ' ', str(cell_text).strip()).upper()
-    if len(clean) > 30 or any(kw in clean for kw in ['KẾT QUẢ', 'MIỀN NAM', 'MIỀN TRUNG', 'THỨ', 'NGÀY', 'LỊCH SỬ', 'BẢNG']):
+    if len(clean) > 30 or any(kw in clean for kw in ['KẾT QUẢ', 'MIỀN NAM', 'MIỀN TRUNG', 'THỨ', 'NGÀY', 'LỊCH SỬ', 'BẢNG', 'TRỰC TIẾP']):
         return None
     clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', clean).strip()
     return STATION_MAP.get(clean_core) or STATION_MAP.get(clean)
@@ -85,7 +85,7 @@ def save_to_supabase(data):
     payload = {
         "station_id": data["station_id"],
         "draw_date": data["draw_date"],
-        "special_prize": data["special_prize"], # 3D ĐB
+        "special_prize": data["special_prize"], # 3D Giải ĐB
         "all_prizes": {
             "special_prize": data["special_prize"],
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
@@ -107,7 +107,7 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT LƯU] Đài {payload['station_id']}: {e}")
         return False
 
-# ==================== 4. PARSER MIỀN BẮC ====================
+# ==================== 4. PARSER MIỀN BẮC (27 GIẢI) ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -158,7 +158,7 @@ def parse_mb(html, db_date):
         "raw_prizes": raw_prizes
     }
 
-# ==================== 5. PARSER MIỀN NAM & TRUNG (QUÉT NGANG THEO CỘT) ====================
+# ==================== 5. PARSER MIỀN NAM & TRUNG (BÓC TÁCH TỪNG CỘT ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -204,6 +204,7 @@ def parse_mn_mt(html, db_date):
         if not any(k in label_upper for k in ['G.', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
             continue
 
+        # Duyệt từng cột tương ứng với đài đã ghi nhận
         for col_idx, st_id in col_stations.items():
             if col_idx < len(tds):
                 td = tds[col_idx]
@@ -233,7 +234,7 @@ def parse_mn_mt(html, db_date):
             })
     return records
 
-# ==================== MAIN CÀO CẢ 3 MIỀN HÔM NAY ====================
+# ==================== MAIN CÀO KẾT QUẢ HÔM NAY ====================
 if __name__ == '__main__':
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
     d_str = today.strftime("%d-%m-%Y")
@@ -248,6 +249,8 @@ if __name__ == '__main__':
         item_mb = parse_mb(html_mb, db_date)
         if item_mb and save_to_supabase(item_mb):
             total_saved += 1
+    else:
+        print("❌ Lỗi fetch Miền Bắc")
 
     # 2. Miền Nam
     html_mn = fetch_kqxs_html(f"/mien-nam?date={d_str}")
@@ -256,6 +259,8 @@ if __name__ == '__main__':
         for item in mn_items:
             if save_to_supabase(item):
                 total_saved += 1
+    else:
+        print("❌ Lỗi fetch Miền Nam")
 
     # 3. Miền Trung
     html_mt = fetch_kqxs_html(f"/mien-trung?date={d_str}")
@@ -264,5 +269,7 @@ if __name__ == '__main__':
         for item in mt_items:
             if save_to_supabase(item):
                 total_saved += 1
+    else:
+        print("❌ Lỗi fetch Miền Trung")
 
-    print(f"\n🎉 [HOÀN TẤT] Đã lưu thành công {total_saved} đài độc lập vào Supabase!")
+    print(f"\n🎉 [HOÀN TẤT] Tổng cộng đã lưu {total_saved} đài độc lập vào Supabase!")
