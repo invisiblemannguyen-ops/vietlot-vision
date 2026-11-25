@@ -81,7 +81,7 @@ def save_to_supabase(data):
 
     sp = data.get("special_prize", "")
     if isinstance(sp, list):
-        sp_str = sp if len(sp) > 0 else ""
+        sp_str = sp[0] if len(sp) > 0 else ""
     else:
         sp_str = str(sp).strip()
 
@@ -106,7 +106,7 @@ def save_to_supabase(data):
         print(f"  ❌ [LỖI LƯU] Đài {payload['station_id']}: {resp.status_code} - {resp.text}")
         return False
 
-# ==================== 5. PARSER DỮ LIỆU MIỀN BẮC ====================
+# ==================== 5. PARSER MIỀN BẮC ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     box_table = soup.find('table', class_=re.compile(r'table|kqxs|box-kqxs', re.I))
@@ -121,7 +121,7 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds.text.strip()
+            label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên tds[0]
             nums_raw = []
             for td in tds[1:]:
                 nums_raw.extend(re.findall(r'\d+', td.text))
@@ -132,7 +132,7 @@ def parse_mb(html, db_date):
             nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
 
             if re.search(r'ĐB|Đặc biệt|GĐB', label, re.I):
-                special_3d = nums_3d if nums_3d else ""
+                special_3d = nums_3d[0] if nums_3d else ""
             elif re.search(r'G7|Giải 7|Giải Bảy', label, re.I):
                 g7_list.extend(nums_3d)
 
@@ -151,7 +151,7 @@ def parse_mb(html, db_date):
         "raw_prizes": prizes_3d
     }
 
-# ==================== 6. PARSER DỮ LIỆU MIỀN NAM & MIỀN TRUNG ====================
+# ==================== 6. PARSER MIỀN NAM & MIỀN TRUNG ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     box_table = soup.find('table', class_=re.compile(r'table|kqxs|box-kqxs', re.I))
@@ -171,7 +171,7 @@ def parse_mn_mt(html, db_date):
             break
 
     if not header_row:
-        header_row = rows
+        header_row = rows[0]
 
     header_cells = header_row.find_all(['td', 'th'])
     col_stations = {}
@@ -191,7 +191,7 @@ def parse_mn_mt(html, db_date):
         if len(tds) <= 1:
             continue
 
-        prize_label = tds.text.strip()
+        prize_label = tds[0].text.strip()  # SỬA LỖI: Lấy ô đầu tiên tds[0]
 
         for idx in range(1, len(tds)):
             if idx in col_stations:
@@ -207,7 +207,7 @@ def parse_mn_mt(html, db_date):
                 if re.search(r'G8|Giải 8|Giải Tám', prize_label, re.I):
                     st_data[st_id]["g8_3d"].extend(nums_3d)
                 elif re.search(r'ĐB|Giải ĐB|Giải Đặc Biệt', prize_label, re.I):
-                    st_data[st_id]["special_3d"] = nums_3d if nums_3d else ""
+                    st_data[st_id]["special_3d"] = nums_3d[0] if nums_3d else ""
 
                 st_data[st_id]["prizes_3d"].extend(nums_3d)
                 st_data[st_id]["lo_2d"].extend(nums_2d)
@@ -225,10 +225,10 @@ def parse_mn_mt(html, db_date):
             })
     return records
 
-# ==================== MAIN TEST (CÀO NGÀY HÔM QUA) ====================
+# ==================== MAIN TEST 1 KỲ (NGÀY HÔM QUA) ====================
 if __name__ == '__main__':
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
-    # Lấy ngày HÔM QUA để chắc chắn trên web đã xổ xong đầy đủ số
+    # Sử dụng ngày HÔM QUA để chắc chắn có đầy đủ kết quả đã xổ
     test_date = today - datetime.timedelta(days=1)
     d_str = test_date.strftime("%d-%m-%Y")
     db_date = test_date.strftime("%Y-%m-%d")
