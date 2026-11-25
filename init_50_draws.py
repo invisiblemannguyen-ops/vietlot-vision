@@ -52,9 +52,32 @@ def get_station_id(cell_text):
             return v
     return None
 
-# ==================== 3. HÀM CHUẨN HÓA SỐ 3D / 2D ====================
+# ==================== 3. LẤY HTML KQXS.VN (CHỐNG BOT) ====================
+def fetch_kqxs_html(path_url):
+    domain = "kqxs.vn"
+    full_url = f"https://{domain}{path_url}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'vi-VN,vi;q=0.9'
+    }
+    try:
+        from curl_cffi import requests as cffi_requests
+        res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=15)
+        if res.status_code == 200 and res.text:
+            return res.text
+    except Exception:
+        pass
+    try:
+        res = requests.get(full_url, headers=headers, timeout=15)
+        if res.status_code == 200 and res.text:
+            return res.text
+    except Exception:
+        pass
+    return None
+
+# ==================== 4. HÀM CHUẨN HÓA SỐ (3D/2D) ====================
 def format_prize_number(raw_str):
-    """Nếu số >= 3 chữ số -> lấy 3D. Nếu 2 chữ số (G8/G7) -> lấy 2D"""
+    """Số >= 3 chữ số lấy 3D. Giải 8/7 (2 chữ số) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if len(clean) >= 3:
         return clean[-3:]
@@ -62,13 +85,13 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
-# ==================== 4. LƯU SUPABASE GỌN GÀNG ====================
+# ==================== 5. LƯU SUPABASE GỌN GÀNG ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
+        print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
         return False
 
     raw_prizes = data.get("raw_prizes", [])
-    # Tự sinh mảng lô 2D từ raw_prizes bằng cách cắt 2 số cuối [-2:]
     lo_2d = [p[-2:] for p in raw_prizes if len(p) >= 2]
     
     payload = {
@@ -78,8 +101,8 @@ def save_to_supabase(data):
         "all_prizes": {
             "special_prize": data["special_prize"],
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
-            "raw_prizes": raw_prizes, # Đủ 18 (MN/MT) hoặc 27 (MB) dạng 3D/2D
-            "lo_numbers": lo_2d       # Đủ 18 hoặc 27 lô 2D
+            "raw_prizes": raw_prizes, # Mảng 18/27 giải (3D & 2D G8)
+            "lo_numbers": lo_2d       # Mảng 18/27 lô 2D
         }
     }
 
@@ -96,7 +119,7 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT] {payload['station_id']}: {e}")
         return False
 
-# ==================== 5. PARSER MIỀN BẮC (27 GIẢI) ====================
+# ==================== 6. PARSER MIỀN BẮC (27 GIẢI) ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -145,7 +168,7 @@ def parse_mb(html, db_date):
         "raw_prizes": raw_prizes
     }
 
-# ==================== 6. PARSER MIỀN NAM & TRUNG (18 GIẢI/ĐÀI) ====================
+# ==================== 7. PARSER MIỀN NAM & TRUNG (18 GIẢI/ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -226,28 +249,27 @@ if __name__ == '__main__':
     d_str = today.strftime("%d-%m-%Y")
     db_date = today.strftime("%Y-%m-%d")
 
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     print(f"🚀 [CÀO HÔM NAY] Bắt đầu cào kết quả ngày HÔM NAY ({d_str})...")
     total_saved = 0
 
     # 1. Miền Bắc
-    res_mb = requests.get(f"[suspicious link removed]{d_str}", headers=headers, timeout=15)
-    if res_mb.status_code == 200:
-        rec_mb = parse_mb(res_mb.text, db_date)
+    html_mb = fetch_kqxs_html(f"/mien-bac?date={d_str}")
+    if html_mb:
+        rec_mb = parse_mb(html_mb, db_date)
         if rec_mb and save_to_supabase(rec_mb):
             total_saved += 1
 
     # 2. Miền Nam
-    res_mn = requests.get(f"[suspicious link removed]{d_str}", headers=headers, timeout=15)
-    if res_mn.status_code == 200:
-        for rec in parse_mn_mt(res_mn.text, db_date):
+    html_mn = fetch_kqxs_html(f"/mien-nam?date={d_str}")
+    if html_mn:
+        for rec in parse_mn_mt(html_mn, db_date):
             if save_to_supabase(rec):
                 total_saved += 1
 
     # 3. Miền Trung
-    res_mt = requests.get(f"[suspicious link removed]{d_str}", headers=headers, timeout=15)
-    if res_mt.status_code == 200:
-        for rec in parse_mn_mt(res_mt.text, db_date):
+    html_mt = fetch_kqxs_html(f"/mien-trung?date={d_str}")
+    if html_mt:
+        for rec in parse_mn_mt(html_mt, db_date):
             if save_to_supabase(rec):
                 total_saved += 1
 
