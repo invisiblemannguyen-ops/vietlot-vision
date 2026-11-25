@@ -16,7 +16,7 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# ==================== 2. MẢNG BẢNG ÁNH CHIẾU TÊN ĐÀI ====================
+# ==================== 2. MẢNG ÁNH CHIẾU TÊN ĐÀI ====================
 STATION_MAP = {
     # Miền Nam
     "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "HO CHI MINH": "TPHCM",
@@ -38,7 +38,6 @@ STATION_MAP = {
 }
 
 def get_station_id(name):
-    """Hàm tra cứu linh hoạt tên đài, không sợ hoa/thường hay dấu chấm"""
     if not name:
         return None
     clean = re.sub(r'\s+', ' ', str(name).strip()).upper()
@@ -50,18 +49,15 @@ def get_station_id(name):
             return v
     return None
 
-# ==================== 3. HÀM TẢI HTML CHỐNG BOT ====================
+# ==================== 3. CHỐNG BOT ====================
 def fetch_kqxs_html(path_url):
     proto = "https"
     domain = "kqxs.vn"
     full_url = f"{proto}://{domain}{path_url}"
-
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
+        'Accept-Language': 'vi-VN,vi;q=0.9'
     }
-
     try:
         from curl_cffi import requests as cffi_requests
         res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=15)
@@ -69,20 +65,18 @@ def fetch_kqxs_html(path_url):
             return res.text
     except Exception:
         pass
-
     try:
         res = requests.get(full_url, headers=headers, timeout=15)
         if res.status_code == 200 and res.text:
             return res.text
     except Exception:
         pass
-
     return None
 
-# ==================== 4. HÀM LƯU VÀO SUPABASE ====================
+# ==================== 4. LƯU SUPABASE ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌ LỖI: Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong environment secrets!")
+        print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
         return False
 
     sp = data.get("special_prize", "")
@@ -106,13 +100,13 @@ def save_to_supabase(data):
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results"
     resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=15)
     if resp.status_code in (200, 201):
-        print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB: {sp_str} | Số lượng Lô: {len(data.get('lo_numbers', []))}")
+        print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB: {sp_str} | Lô: {len(data.get('lo_numbers', []))} số")
         return True
     else:
-        print(f"  ❌ [LỖI LƯU SUPABASE] Đài: {payload['station_id']} | Mã lỗi: {resp.status_code} - {resp.text}")
+        print(f"  ❌ [LỖI LƯU] Đài: {payload['station_id']}: {resp.status_code} - {resp.text}")
         return False
 
-# ==================== 5. PARSER DỮ LIỆU MIỀN BẮC ====================
+# ==================== 5. PARSER MIỀN BẮC ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     box_table = soup.find('table', class_=re.compile(r'table|kqxs|box-kqxs', re.I))
@@ -131,7 +125,6 @@ def parse_mb(html, db_date):
             nums_raw = []
             for td in tds[1:]:
                 nums_raw.extend(re.findall(r'\d+', td.text))
-            
             if not nums_raw:
                 continue
 
@@ -158,7 +151,7 @@ def parse_mb(html, db_date):
         "raw_prizes": prizes_3d
     }
 
-# ==================== 6. PARSER DỮ LIỆU MIỀN NAM & MIỀN TRUNG ====================
+# ==================== 6. PARSER MIỀN NAM & MIỀN TRUNG ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     box_table = soup.find('table', class_=re.compile(r'table|kqxs|box-kqxs', re.I))
@@ -181,7 +174,6 @@ def parse_mn_mt(html, db_date):
         header_row = rows[0]
 
     header_cells = header_row.find_all(['td', 'th'])
-    
     col_stations = {}
     for idx, cell in enumerate(header_cells):
         cell_text = cell.text.strip()
@@ -233,47 +225,36 @@ def parse_mn_mt(html, db_date):
             })
     return records
 
-# ==================== 7. TIẾN TRÌNH TEST CHẠY 1 KỲ ====================
+# ==================== MAIN TEST 1 KỲ ====================
 if __name__ == '__main__':
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
     d_str = today.strftime("%d-%m-%Y")
     db_date = today.strftime("%Y-%m-%d")
 
-    print(f"🚀 [TEST 1 KỲ] Bắt đầu cào thử 1 kỳ ngày {d_str} cho toàn bộ các đài...")
-
+    print(f"🚀 [TEST 1 KỲ] Cào thử ngày {d_str}...")
     total_saved = 0
-    saved_stations = []
 
-    # 1. Cào Miền Bắc 1 kỳ
-    print("\n--- 1. CÀO MIỀN BẮC ---")
+    # 1. Miền Bắc
     html_mb = fetch_kqxs_html(f"/mien-bac?date={d_str}")
     if html_mb:
         rec_mb = parse_mb(html_mb, db_date)
         if rec_mb and save_to_supabase(rec_mb):
             total_saved += 1
-            saved_stations.append("MB")
 
-    # 2. Cào Miền Nam 1 kỳ (Xổ 3-4 đài trong ngày)
-    print("\n--- 2. CÀO MIỀN NAM ---")
+    # 2. Miền Nam
     html_mn = fetch_kqxs_html(f"/mien-nam?date={d_str}")
     if html_mn:
-        recs_mn = parse_mn_mt(html_mn, db_date)
-        for rec in recs_mn:
+        for rec in parse_mn_mt(html_mn, db_date):
             if save_to_supabase(rec):
                 total_saved += 1
-                saved_stations.append(rec["station_id"])
 
-    # 3. Cào Miền Trung 1 kỳ (Xổ 2-3 đài trong ngày)
-    print("\n--- 3. CÀO MIỀN TRUNG ---")
+    # 3. Miền Trung
     html_mt = fetch_kqxs_html(f"/mien-trung?date={d_str}")
     if html_mt:
-        recs_mt = parse_mn_mt(html_mt, db_date)
-        for rec in recs_mt:
+        for rec in parse_mn_mt(html_mt, db_date):
             if save_to_supabase(rec):
                 total_saved += 1
-                saved_stations.append(rec["station_id"])
 
-    print(f"\n🎉 [HOÀN TẤT TEST] Đã lưu thành công {total_saved} đài: {', '.join(saved_stations)}")
-
+    print(f"\n🎉 [KẾT QUẢ TEST] Đã lưu {total_saved} đài vào Supabase!")
     if total_saved == 0:
-        raise RuntimeError("❌ LỖI: Không cào hoặc lưu được bản ghi nào vào Supabase!")
+        raise RuntimeError("❌ Không cào được đài nào!")
