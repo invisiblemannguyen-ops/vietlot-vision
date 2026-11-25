@@ -65,6 +65,7 @@ def fetch_kqxs_html(path_url):
     return None
 
 def format_prize_number(raw_str):
+    """Số >= 3 chữ số lấy 3D. Giải 8/7 (2 chữ số) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if len(clean) >= 3:
         return clean[-3:]
@@ -72,6 +73,7 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
+# ==================== 3. LƯU SUPABASE GỌN GÀNG ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu cấu hình môi trường SUPABASE!")
@@ -83,12 +85,12 @@ def save_to_supabase(data):
     payload = {
         "station_id": data["station_id"],
         "draw_date": data["draw_date"],
-        "special_prize": data["special_prize"],
+        "special_prize": data["special_prize"], # 3D ĐB
         "all_prizes": {
             "special_prize": data["special_prize"],
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
-            "raw_prizes": raw_prizes,
-            "lo_numbers": lo_numbers
+            "raw_prizes": raw_prizes, # 18 giải (MN/MT) hoặc 27 giải (MB)
+            "lo_numbers": lo_numbers   # 18 hoặc 27 lô 2D
         }
     }
 
@@ -105,6 +107,7 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT LƯU] Đài {payload['station_id']}: {e}")
         return False
 
+# ==================== 4. PARSER MIỀN BẮC ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -113,6 +116,8 @@ def parse_mb(html, db_date):
         if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1', re.I)):
             box_table = t
             break
+    if not box_table:
+        box_table = tables[0] if tables else None
     if not box_table:
         return None
 
@@ -123,7 +128,7 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds.get_text(separator=' ').strip().upper()
+            label = tds[0].get_text(separator=' ').strip().upper()
             if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ']):
                 continue
 
@@ -136,7 +141,7 @@ def parse_mb(html, db_date):
                 continue
 
             if re.search(r'ĐB|ĐẶC BIỆT', label):
-                special_prize = formatted_nums if formatted_nums else ""
+                special_prize = formatted_nums[0] if formatted_nums else ""
             elif re.search(r'G7|GIẢI 7', label):
                 g7_list.extend(formatted_nums)
 
@@ -153,6 +158,7 @@ def parse_mb(html, db_date):
         "raw_prizes": raw_prizes
     }
 
+# ==================== 5. PARSER MIỀN NAM & TRUNG (QUÉT NGANG THEO CỘT) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -194,7 +200,7 @@ def parse_mn_mt(html, db_date):
         if len(tds) <= 1:
             continue
 
-        label_upper = tds.get_text(separator=' ').strip().upper()
+        label_upper = tds[0].get_text(separator=' ').strip().upper()
         if not any(k in label_upper for k in ['G.', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
             continue
 
@@ -207,11 +213,11 @@ def parse_mn_mt(html, db_date):
 
                 formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
 
-                if any(k in label_upper for k in ['G8', 'G.8', 'TÁM']):
+                if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI TÁM', 'GIẢI 8', 'TÁM']):
                     st_data[st_id]["g8"].extend(formatted_nums)
                 elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
                     if formatted_nums:
-                        st_data[st_id]["special_prize"] = formatted_nums
+                        st_data[st_id]["special_prize"] = formatted_nums[0]
 
                 st_data[st_id]["raw_prizes"].extend(formatted_nums)
 
@@ -242,35 +248,21 @@ if __name__ == '__main__':
         item_mb = parse_mb(html_mb, db_date)
         if item_mb and save_to_supabase(item_mb):
             total_saved += 1
-    else:
-        print("❌ Miền Bắc: Không lấy được HTML")
 
     # 2. Miền Nam
     html_mn = fetch_kqxs_html(f"/mien-nam?date={d_str}")
-    if not html_mn:
-        html_mn = fetch_kqxs_html(f"/xo-so-mien-nam/{d_str}")
     if html_mn:
         mn_items = parse_mn_mt(html_mn, db_date)
-        if not mn_items:
-            print("⚠️ Miền Nam: Không parse được đài nào từ HTML!")
         for item in mn_items:
             if save_to_supabase(item):
                 total_saved += 1
-    else:
-        print("❌ Miền Nam: Không lấy được HTML")
 
     # 3. Miền Trung
     html_mt = fetch_kqxs_html(f"/mien-trung?date={d_str}")
-    if not html_mt:
-        html_mt = fetch_kqxs_html(f"/xo-so-mien-trung/{d_str}")
     if html_mt:
         mt_items = parse_mn_mt(html_mt, db_date)
-        if not mt_items:
-            print("⚠️ Miền Trung: Không parse được đài nào từ HTML!")
         for item in mt_items:
             if save_to_supabase(item):
                 total_saved += 1
-    else:
-        print("❌ Miền Trung: Không lấy được HTML")
 
-    print(f"\n🎉 [HOÀN TẤT] Tổng cộng đã lưu {total_saved} đài vào Supabase!")
+    print(f"\n🎉 [HOÀN TẤT] Đã lưu thành công {total_saved} đài độc lập vào Supabase!")
