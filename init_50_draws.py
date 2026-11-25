@@ -53,7 +53,7 @@ def get_station_id(cell_text):
         if k.upper() == clean_core or k.replace('.', '').upper() == clean_core_no_dot:
             return v
 
-    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x), reverse=True):
         if k.upper() in clean_core:
             return v
 
@@ -131,7 +131,7 @@ def parse_mb(html, db_date):
             box_table = t
             break
     if not box_table:
-        box_table = tables[0]
+        box_table = tables
 
     prizes_3d = []
     lo_2d = []
@@ -182,7 +182,7 @@ def parse_mb(html, db_date):
         "prizes_tier": prizes_tier
     }
 
-# ==================== 6. PARSER MIỀN NAM & TRUNG (BỎ CHỌN NHẦM BẢNG, CHUẨN 18 GIẢI/ĐÀI) ====================
+# ==================== 6. PARSER MIỀN NAM & TRUNG (TÁCH ĐỦ TỪNG ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -192,7 +192,6 @@ def parse_mn_mt(html, db_date):
     target_table = None
     col_stations = {}
 
-    # Quét tất cả các bảng để tìm bảng có số cột đài nhiều nhất
     for t in tables:
         rows = t.find_all('tr')
         best_row_stations = {}
