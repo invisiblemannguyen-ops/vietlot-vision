@@ -40,18 +40,21 @@ def get_station_id(cell_text):
     if not cell_text:
         return None
     clean = re.sub(r'\s+', ' ', str(cell_text).strip()).upper()
-    # Bỏ qua các ô chứa dòng tiêu đề chung lớn
-    if any(ignore in clean for ignore in ['KẾT QUẢ', 'MIỀN NAM', 'MIỀN TRUNG', 'LỊCH SỬ', 'KQXS']):
+
+    # Bỏ qua ô gộp nhiều đài hoặc ô tiêu đề trang
+    if any(sep in clean for sep in ['-', ',', '/', ' VÀ ', 'TRỰC TIẾP']):
         return None
-    
+    if any(ignore in clean for ignore in ['KẾT QUẢ', 'MIỀN NAM', 'MIỀN TRUNG', 'LỊCH SỬ', 'KQXS', 'BẢNG']):
+        return None
+
     clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO)\s+', '', clean).strip()
-    
+
     if clean_core in STATION_MAP:
         return STATION_MAP[clean_core]
     for k, v in STATION_MAP.items():
         if k == clean_core:
             return v
-    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x), reverse=True):
         if k in clean_core:
             return v
     return None
@@ -79,7 +82,7 @@ def fetch_kqxs_html(path_url):
     return None
 
 def format_prize_number(raw_str):
-    """Số >= 3 chữ số cắt lấy 3D. Giải 8/7 có 2 chữ số giữ nguyên 2D."""
+    """Số >= 3 chữ số lấy 3D. Giải 8/7 có 2 chữ số giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if len(clean) >= 3:
         return clean[-3:]
@@ -87,7 +90,6 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
-# ==================== 3. LƯU SUPABASE GỌN GÀNG ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu cấu hình môi trường SUPABASE!")
@@ -99,7 +101,7 @@ def save_to_supabase(data):
     payload = {
         "station_id": data["station_id"],
         "draw_date": data["draw_date"],
-        "special_prize": data["special_prize"], # 3D ĐB
+        "special_prize": data["special_prize"],
         "all_prizes": {
             "special_prize": data["special_prize"],
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
@@ -121,7 +123,6 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT LƯU] Đài {payload['station_id']}: {e}")
         return False
 
-# ==================== 4. PARSER MIỀN BẮC (KQXS.VN - 27 GIẢI) ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -170,7 +171,6 @@ def parse_mb(html, db_date):
         "raw_prizes": raw_prizes
     }
 
-# ==================== 5. PARSER MIỀN NAM & TRUNG (KQXS.VN - TÁCH CHUẨN CÁC ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -180,7 +180,6 @@ def parse_mn_mt(html, db_date):
     target_table = None
     col_stations = {}
 
-    # Tìm đúng bảng chứa dòng các đài chuẩn xác
     for t in tables:
         rows = t.find_all('tr')
         best_row_map = {}
