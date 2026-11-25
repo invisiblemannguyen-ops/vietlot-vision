@@ -47,7 +47,7 @@ def get_station_id(name):
     for k, v in STATION_MAP.items():
         if k.upper() == clean or k.replace('.', '').upper() == clean_no_dot:
             return v
-    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x), reverse=True):
         k_clean = k.upper()
         if k_clean in clean or k_clean.replace('.', '') in clean_no_dot:
             return v
@@ -85,9 +85,9 @@ def save_to_supabase(data):
 
     sp = data.get("special_prize", "")
     if isinstance(sp, list):
-        sp_str = str(sp[0]).strip() if len(sp) > 0 else ""
+        sp_str = str(sp[0]).strip()[-3:] if len(sp) > 0 else ""
     else:
-        sp_str = str(sp).strip()
+        sp_str = str(sp).strip()[-3:] if str(sp).strip() else ""
 
     payload = {
         "station_id": data["station_id"],
@@ -101,11 +101,12 @@ def save_to_supabase(data):
         }
     }
 
+    # Parameter ?on_conflict=station_id,draw_date giúp tự động UPSERT
     endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date"
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=15)
         if resp.status_code in (200, 201, 204, 409):
-            print(f"  ✅ [LƯU/CẬP NHẬT THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB: '{sp_str}' | Tổng số giải: {len(data.get('raw_prizes', []))} | Lô: {len(data.get('lo_numbers', []))} số")
+            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {payload['station_id']} | Ngày: {payload['draw_date']} | ĐB (3D): '{sp_str}' | Tổng số giải: {len(data.get('raw_prizes', []))} | Lô: {len(data.get('lo_numbers', []))} số")
             return True
         else:
             print(f"  ❌ [LỖI LƯU SUPABASE] Đài {payload['station_id']}: {resp.status_code} - {resp.text}")
@@ -114,7 +115,7 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT LƯU] Đài {payload['station_id']}: {e}")
         return False
 
-# ==================== 5. PARSER MIỀN BẮC (27 GIẢI) ====================
+# ==================== 5. PARSER MIỀN BẮC (CHUẨN 27 GIẢI) ====================
 def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -131,24 +132,31 @@ def parse_mb(html, db_date):
 
     prizes_3d = []
     lo_2d = []
-    special_prize = ""
+    special_prize_3d = ""
     g7_list = []
 
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
             label = tds[0].get_text(separator=' ').strip()
+            
+            # Lọc bỏ dòng Mã đặc biệt / Ký hiệu
+            if any(k in label.upper() for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ ĐẶC BIỆT']):
+                continue
+
             nums_raw = []
             for td in tds[1:]:
                 nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
             if not nums_raw:
                 continue
 
-            nums_3d = [n[-3:] for n in nums_raw if len(n) >= 2]
-            nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
+            # Chỉ lấy số hợp lệ có độ dài >= 2 chữ số
+            nums_valid = [n for n in nums_raw if len(n) >= 2]
+            nums_3d = [n[-3:] for n in nums_valid]
+            nums_2d = [n[-2:] for n in nums_valid]
 
             if re.search(r'ĐB|Đặc biệt|GĐB', label, re.I):
-                special_prize = nums_raw[0] if nums_raw else ""
+                special_prize_3d = nums_3d[0] if nums_3d else ""
             elif re.search(r'G7|Giải 7|Giải Bảy', label, re.I):
                 g7_list.extend(nums_3d)
 
@@ -161,13 +169,13 @@ def parse_mb(html, db_date):
     return {
         "station_id": "MB",
         "draw_date": db_date,
-        "special_prize": special_prize,
+        "special_prize": special_prize_3d,
         "seventh_or_eighth": g7_list,
         "lo_numbers": lo_2d,
         "raw_prizes": prizes_3d
     }
 
-# ==================== 6. PARSER MIỀN NAM & TRUNG (18 GIẢI/ĐÀI) ====================
+# ==================== 6. PARSER MIỀN NAM & TRUNG (CHUẨN 18 GIẢI/ĐÀI) ====================
 def parse_mn_mt(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
@@ -204,6 +212,13 @@ def parse_mn_mt(html, db_date):
             continue
 
         prize_label = tds[0].get_text(separator=' ').strip()
+        label_upper = prize_label.upper()
+
+        # Chỉ đọc các dòng Giải thưởng chính thức, bỏ qua bảng Lô tô phụ
+        if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
+            continue
+        if any(ignore in label_upper for ignore in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'KÝ HIỆU']):
+            continue
 
         for idx in range(1, len(tds)):
             if idx in col_stations:
@@ -216,10 +231,10 @@ def parse_mn_mt(html, db_date):
                 nums_3d = [n[-3:] for n in nums_raw if len(n) >= 2]
                 nums_2d = [n[-2:] for n in nums_raw if len(n) >= 2]
 
-                if re.search(r'G8|Giải 8|Giải Tám', prize_label, re.I):
+                if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM']):
                     st_data[st_id]["g8_3d"].extend(nums_3d)
-                elif re.search(r'ĐB|Giải ĐB|Giải Đặc Biệt', prize_label, re.I):
-                    st_data[st_id]["special_prize"] = nums_raw[0] if nums_raw else ""
+                elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
+                    st_data[st_id]["special_prize"] = nums_3d[0] if nums_3d else ""
 
                 st_data[st_id]["prizes_3d"].extend(nums_3d)
                 st_data[st_id]["lo_2d"].extend(nums_2d)
@@ -243,7 +258,7 @@ if __name__ == '__main__':
     d_str = today.strftime("%d-%m-%Y")
     db_date = today.strftime("%Y-%m-%d")
 
-    print(f"🚀 [CÀO HÔM NAY] Bắt đầu cào kết quả ngày HÔM NAY ({d_str}) cho toàn bộ các đài từ kqxs.vn...")
+    print(f"🚀 [CÀO HÔM NAY] Bắt đầu cào kết quả ngày HÔM NAY ({d_str}) cho toàn bộ các đài...")
     total_saved = 0
     saved_stations = []
 
@@ -275,4 +290,4 @@ if __name__ == '__main__':
 
     print(f"\n🎉 [HOÀN TẤT CÀO HÔM NAY] Đã lưu/cập nhật thành công {total_saved} đài: {', '.join(saved_stations)}")
     if total_saved == 0:
-        raise RuntimeError("❌ LỖI: Không cào được đài nào hôm nay từ kqxs.vn!")
+        raise RuntimeError("❌ LỖI: Không cào được đài nào hôm nay!")
