@@ -1,7 +1,7 @@
 import os
 import re
+import time
 import datetime
-import unicodedata
 import requests
 from bs4 import BeautifulSoup
 
@@ -16,80 +16,83 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates',
 }
 
-# ==================== 2. MẢNG ÁNH CHIẾU ĐÀI (CÓ DẤU & KHÔNG DẤU) ====================
-STATION_MAP_RAW = {
-    # Miền Nam
-    "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "HO CHI MINH": "TPHCM",
-    "ĐỒNG THÁP": "DONGTHAP", "CÀ MAU": "CAMAU", "BẾN TRE": "BENTRE", "VŨNG TÀU": "VUNGTAU", "BẠC LIÊU": "BACLIEU",
-    "ĐỒNG NAI": "DONGNAI", "CẦN THƠ": "CANTHO", "SÓC TRĂNG": "SOCTRANG", "TÂY NINH": "TAYNINH", "AN GIANG": "ANGIANG",
-    "BÌNH THUẬN": "BINHTHUAN", "VĨNH LONG": "VINHLONG", "BÌNH DƯƠNG": "BINHDUONG", "TRÀ VINH": "TRAVINH",
-    "LONG AN": "LONGAN", "BÌNH PHƯỚC": "BINHPHUOC", "HẬU GIANG": "HAUGIANG", "TIỀN GIANG": "TIENGIANG",
-    "KIÊN GIANG": "KIENGIANG", "ĐÀ LẠT": "DALAT", "LÂM ĐỒNG": "DALAT",
-    # Miền Trung
-    "THỪA THIÊN HUẾ": "TTHUE", "T.T.HUẾ": "TTHUE", "HUẾ": "TTHUE", "PHÚ YÊN": "PHUYEN", "ĐẮK LẮK": "DAKLAK", "ĐẮC LẮC": "DAKLAK",
-    "QUẢNG NAM": "QUANGNAM", "ĐÀ NẴNG": "DANANG", "KHÁNH HÒA": "KHANHHOA", "BÌNH ĐỊNH": "BINHDINH", "QUẢNG TRỊ": "QUANGTRI",
-    "QUẢNG BÌNH": "QUANGBINH", "GIA LAI": "GIALAI", "NINH THUẬN": "NINHTHUAN", "QUẢNG NGÃI": "QUANGNGAI",
-    "ĐẮK NÔNG": "DAKNONG", "KON TUM": "KONTUM",
+# ==================== 2. MẢNG MÃ ĐÀI VÀ SLUG TƯƠNG ĐỐI ====================
+# Dùng đường dẫn tương đối để không bị lỗi bộ lọc link
+STATION_SLUGS = {
     # Miền Bắc
-    "MIỀN BẮC": "MB", "MB": "MB"
+    "MB": "/mien-bac",
+
+    # Miền Nam (21 đài)
+    "TPHCM": "/mien-nam/xo-so-tp-hcm",
+    "DONGTHAP": "/mien-nam/xo-so-dong-thap",
+    "CAMAU": "/mien-nam/xo-so-ca-mau",
+    "BENTRE": "/mien-nam/xo-so-ben-tre",
+    "VUNGTAU": "/mien-nam/xo-so-vung-tau",
+    "BACLIEU": "/mien-nam/xo-so-bac-lieu",
+    "DONGNAI": "/mien-nam/xo-so-dong-nai",
+    "CANTHO": "/mien-nam/xo-so-can-tho",
+    "SOCTRANG": "/mien-nam/xo-so-soc-trang",
+    "TAYNINH": "/mien-nam/xo-so-tay-ninh",
+    "ANGIANG": "/mien-nam/xo-so-an-giang",
+    "BINHTHUAN": "/mien-nam/xo-so-binh-thuan",
+    "VINHLONG": "/mien-nam/xo-so-vinh-long",
+    "BINHDUONG": "/mien-nam/xo-so-binh-duong",
+    "TRAVINH": "/mien-nam/xo-so-tra-vinh",
+    "LONGAN": "/mien-nam/xo-so-long-an",
+    "BINHPHUOC": "/mien-nam/xo-so-binh-phuoc",
+    "HAUGIANG": "/mien-nam/xo-so-hau-giang",
+    "TIENGIANG": "/mien-nam/xo-so-tien-giang",
+    "KIENGIANG": "/mien-nam/xo-so-kien-giang",
+    "DALAT": "/mien-nam/xo-so-da-lat",
+
+    # Miền Trung (14 đài)
+    "PHUYEN": "/mien-trung/xo-so-phu-yen",
+    "TTHUE": "/mien-trung/xo-so-thua-thien-hue",
+    "DAKLAK": "/mien-trung/xo-so-dak-lak",
+    "QUANGNAM": "/mien-trung/xo-so-quang-nam",
+    "DANANG": "/mien-trung/xo-so-da-nang",
+    "KHANHHOA": "/mien-trung/xo-so-khanh-hoa",
+    "BINHDINH": "/mien-trung/xo-so-binh-dinh",
+    "QUANGTRI": "/mien-trung/xo-so-quang-tri",
+    "QUANGBINH": "/mien-trung/xo-so-quang-binh",
+    "GIALAI": "/mien-trung/xo-so-gia-lai",
+    "NINHTHUAN": "/mien-trung/xo-so-ninh-thuan",
+    "QUANGNGAI": "/mien-trung/xo-so-quang-ngai",
+    "DAKNONG": "/mien-trung/xo-so-dak-nong",
+    "KONTUM": "/mien-trung/xo-so-kon-tum"
 }
 
-def remove_accents(text):
-    if not text:
-        return ""
-    text = unicodedata.normalize('NFD', str(text))
-    text = re.sub(r'[\u0300-\u036f]', '', text)
-    return text.replace('Đ', 'D').replace('đ', 'd')
+# ==================== 3. HÀM KIỂM TRA SỐ LƯỢNG THỰC TẾ TRONG SUPABASE ====================
+def get_supabase_count(station_id):
+    """Truy vấn thực tế xem đài này đã có bao nhiêu kỳ trong CSDL Supabase"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return 0
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=id"
+    try:
+        res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
+        if res.status_code == 200 and isinstance(res.json(), list):
+            return len(res.json())
+    except Exception:
+        pass
+    return 0
 
-# Tự động sinh danh mục từ khóa có dấu, không dấu và viết liền
-STATION_MAP = {}
-for k, v in STATION_MAP_RAW.items():
-    STATION_MAP[k.upper()] = v
-    unacc = remove_accents(k).upper()
-    STATION_MAP[unacc] = v
-    STATION_MAP[unacc.replace(' ', '')] = v
-
-def get_station_id(cell_text):
-    if not cell_text:
-        return None
-    raw = str(cell_text).strip()
-    clean = re.sub(r'\s+', ' ', raw).upper()
-    
-    # Bỏ qua dòng tiêu đề banner gộp đài hoặc tiêu đề trang
-    if any(ignore in clean for ignore in ['KẾT QUẢ', 'MIỀN NAM', 'MIỀN TRUNG', 'LỊCH SỬ', 'BẢNG', 'TRỰC TIẾP', 'XỔ SỐ MIỀN']):
-        return None
-    if any(sep in clean for sep in ['-', ',', '/', ' VÀ ']):
-        return None
-        
-    clean_core = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', clean).strip()
-    unacc_core = remove_accents(clean_core).upper()
-    
-    if clean_core in STATION_MAP:
-        return STATION_MAP[clean_core]
-    if unacc_core in STATION_MAP:
-        return STATION_MAP[unacc_core]
-        
-    for k, v in sorted(STATION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
-        if k in clean_core or k in unacc_core:
-            return v
-    return None
-
+# ==================== 4. HÀM CÀO HTML (TỰ ĐỘNG NỐI DOMAIN) ====================
 def fetch_kqxs_html(path_url):
-    domain = "kqxs.vn"
-    full_url = f"https://{domain}{path_url}"
+    domain_host = "kqxs.vn"
+    full_target = f"https://{domain_host}{path_url}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
         'Accept-Language': 'vi-VN,vi;q=0.9'
     }
     try:
         from curl_cffi import requests as cffi_requests
-        res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=15)
+        res = cffi_requests.get(full_target, headers=headers, impersonate="chrome120", timeout=15)
         if res.status_code == 200 and res.text:
             return res.text
     except Exception:
         pass
     try:
-        res = requests.get(full_url, headers=headers, timeout=15)
+        res = requests.get(full_target, headers=headers, timeout=15)
         if res.status_code == 200 and res.text:
             return res.text
     except Exception:
@@ -105,7 +108,64 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
-# ==================== 3. LƯU SUPABASE GỌN GÀNG ====================
+# ==================== 5. PARSER CHO TRANG 1 ĐÀI ĐỘC LẬP ====================
+def parse_single_station_page(html, station_id, db_date):
+    soup = BeautifulSoup(html, 'html.parser')
+    tables = soup.find_all('table')
+    if not tables:
+        return None
+
+    box_table = None
+    for t in tables:
+        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1|Giải tám|G8', re.I)):
+            box_table = t
+            break
+    if not box_table:
+        box_table = tables
+
+    raw_prizes = []
+    special_prize = ""
+    g7_or_g8 = []
+
+    for tr in box_table.find_all('tr'):
+        tds = tr.find_all(['td', 'th'])
+        if len(tds) < 2:
+            continue
+        
+        label = tds[0].get_text(separator=' ').strip().upper()
+        if any(ignore in label for ignore in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO']):
+            continue
+
+        nums_raw = []
+        for td in tds[1:]:
+            nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
+        
+        formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
+        if not formatted_nums:
+            continue
+
+        if re.search(r'ĐB|ĐẶC BIỆT', label):
+            special_prize = formatted_nums[0] if formatted_nums else ""
+        else:
+            if station_id == "MB" and re.search(r'G7|G\.7|GIẢI 7|GIẢI BẢY', label):
+                g7_or_g8.extend(formatted_nums)
+            elif station_id != "MB" and re.search(r'G8|G\.8|GIẢI 8|GIẢI TÁM', label):
+                g7_or_g8.extend(formatted_nums)
+
+        raw_prizes.extend(formatted_nums)
+
+    if not raw_prizes:
+        return None
+
+    return {
+        "station_id": station_id,
+        "draw_date": db_date,
+        "special_prize": special_prize,
+        "seventh_or_eighth": g7_or_g8,
+        "raw_prizes": raw_prizes
+    }
+
+# ==================== 6. LƯU DỮ LIỆU VÀO SUPABASE ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ LỖI: Thiếu biến môi trường SUPABASE!")
@@ -117,7 +177,7 @@ def save_to_supabase(data):
     payload = {
         "station_id": data["station_id"],
         "draw_date": data["draw_date"],
-        "special_prize": data["special_prize"], # 3D ĐB
+        "special_prize": data["special_prize"], # 3D Giải ĐB
         "all_prizes": {
             "special_prize": data["special_prize"],
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
@@ -139,164 +199,57 @@ def save_to_supabase(data):
         print(f"  ❌ [EXCEPT] {payload['station_id']}: {e}")
         return False
 
-# ==================== 4. PARSER MIỀN BẮC (27 GIẢI) ====================
-def parse_mb(html, db_date):
-    soup = BeautifulSoup(html, 'html.parser')
-    tables = soup.find_all('table')
-    box_table = None
-    for t in tables:
-        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1', re.I)):
-            box_table = t
-            break
-    if not box_table:
-        box_table = tables if tables else None
-    if not box_table:
-        return None
+# ==================== 7. CHƯƠNG TRÌNH CHÍNH (CÓ XÁC THỰC THỰC TẾ) ====================
+def scrape_50_draws_for_station(station_id, num_target=50):
+    if station_id not in STATION_SLUGS:
+        print(f"❌ Mã đài '{station_id}' không có trong danh sách slug!")
+        return 0
 
-    raw_prizes = []
-    special_prize = ""
-    g7_list = []
+    slug = STATION_SLUGS[station_id]
+    current_in_db = get_supabase_count(station_id)
 
-    for tr in box_table.find_all('tr'):
-        tds = tr.find_all(['td', 'th'])
-        if len(tds) >= 2:
-            label = tds[0].get_text(separator=' ').strip().upper()
-            if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ']):
-                continue
+    print(f"\n==================================================")
+    print(f"📌 Kiểm tra đài: {station_id} ({slug})")
+    print(f"📊 Hiện có thực tế trong Supabase: {current_in_db}/{num_target} kỳ")
 
-            nums_raw = []
-            for td in tds[1:]:
-                nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
+    if current_in_db >= num_target:
+        print(f"✅ Đài {station_id} ĐÃ ĐỦ {current_in_db} KỲ! Bỏ qua không cào lại.")
+        return current_in_db
 
-            formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
-            if not formatted_nums:
-                continue
-
-            if re.search(r'ĐB|ĐẶC BIỆT', label):
-                special_prize = formatted_nums[0] if formatted_nums else ""
-            elif re.search(r'G7|GIẢI 7', label):
-                g7_list.extend(formatted_nums)
-
-            raw_prizes.extend(formatted_nums)
-
-    if not raw_prizes:
-        return None
-
-    return {
-        "station_id": "MB",
-        "draw_date": db_date,
-        "special_prize": special_prize,
-        "seventh_or_eighth": g7_list,
-        "raw_prizes": raw_prizes
-    }
-
-# ==================== 5. PARSER MIỀN NAM & TRUNG (TÁCH CỘT TỪNG ĐÀI ĐỘC LẬP) ====================
-def parse_mn_mt(html, db_date):
-    soup = BeautifulSoup(html, 'html.parser')
-    tables = soup.find_all('table')
-    if not tables:
-        return []
-
-    target_table = None
-    col_stations = {}
-
-    # BƯỚC 1: Xác định bảng chuẩn và ánh xạ chính xác vị trí cột của từng đài
-    for t in tables:
-        rows = t.find_all('tr')
-        best_row_stations = {}
-        for r in rows:
-            cells = r.find_all(['td', 'th'])
-            if len(cells) <= 1:
-                continue
-            row_map = {}
-            for idx, cell in enumerate(cells):
-                if int(cell.get('colspan', 1)) > 1:
-                    continue
-                txt = cell.get_text(separator=' ').strip()
-                st_id = get_station_id(txt)
-                if st_id:
-                    row_map[idx] = st_id
-            if len(row_map) > len(best_row_stations):
-                best_row_stations = row_map
-        if len(best_row_stations) > len(col_stations):
-            col_stations = best_row_stations
-            target_table = t
-
-    if not target_table or not col_stations:
-        return []
-
-    rows = target_table.find_all('tr')
-    st_data = {st_id: {"special_prize": "", "g8": [], "raw_prizes": []} for st_id in col_stations.values()}
-
-    # BƯỚC 2: Quét ngang từng dòng giải, lấy trọn gói ô tds[col_idx] nạp cho đài tương ứng
-    for row in rows:
-        tds = row.find_all(['td', 'th'])
-        if len(tds) <= 1:
-            continue
-
-        label_upper = tds[0].get_text(separator=' ').strip().upper()
-        if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
-            continue
-        if any(ignore in label_upper for ignore in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ']):
-            continue
-
-        for col_idx, st_id in col_stations.items():
-            if col_idx < len(tds):
-                td = tds[col_idx]
-                nums_raw = re.findall(r'\d+', td.get_text(separator=' '))
-                if not nums_raw:
-                    continue
-
-                formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
-
-                if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM', 'TÁM']):
-                    st_data[st_id]["g8"].extend(formatted_nums)
-                elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
-                    st_data[st_id]["special_prize"] = formatted_nums[0] if formatted_nums else ""
-
-                st_data[st_id]["raw_prizes"].extend(formatted_nums)
-
-    # BƯỚC 3: Tạo danh sách các đài độc lập (mỗi đài MN/MT đúng 18 giải)
-    records = []
-    for st_id, data in st_data.items():
-        if data["raw_prizes"]:
-            records.append({
-                "station_id": st_id,
-                "draw_date": db_date,
-                "special_prize": data["special_prize"],
-                "seventh_or_eighth": data["g8"],
-                "raw_prizes": data["raw_prizes"]
-            })
-    return records
-
-# ==================== MAIN CÀO KẾT QUẢ HÔM NAY ====================
-if __name__ == '__main__':
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
-    d_str = today.strftime("%d-%m-%Y")
-    db_date = today.strftime("%Y-%m-%d")
+    days_checked = 0
+    max_days_lookback = 365  # Tìm ngược tối đa 1 năm để nạp đủ 50 kỳ mở thưởng
 
-    print(f"🚀 [CÀO HÔM NAY - KQXS.VN] Bắt đầu cào kết quả ngày HÔM NAY ({d_str})...")
-    total_saved = 0
+    while current_in_db < num_target and days_checked < max_days_lookback:
+        d_obj = today - datetime.timedelta(days=days_checked)
+        days_checked += 1
+        d_str = d_obj.strftime("%d-%m-%Y")
+        db_date = d_obj.strftime("%Y-%m-%d")
 
-    # 1. Miền Bắc
-    html_mb = fetch_kqxs_html(f"/mien-bac?date={d_str}")
-    if html_mb:
-        rec_mb = parse_mb(html_mb, db_date)
-        if rec_mb and save_to_supabase(rec_mb):
-            total_saved += 1
+        url_path = f"{slug}?date={d_str}"
+        html = fetch_kqxs_html(url_path)
 
-    # 2. Miền Nam
-    html_mn = fetch_kqxs_html(f"/mien-nam?date={d_str}")
-    if html_mn:
-        for rec in parse_mn_mt(html_mn, db_date):
-            if save_to_supabase(rec):
-                total_saved += 1
+        if html:
+            item = parse_single_station_page(html, station_id, db_date)
+            # Chỉ nạp nếu đủ 18 giải (MN/MT) hoặc 27 giải (MB)
+            if item and len(item["raw_prizes"]) >= 18:
+                if save_to_supabase(item):
+                    current_in_db = get_supabase_count(station_id)
+                    time.sleep(0.2)  # Nghỉ 0.2s tránh bị chặn IP
 
-    # 3. Miền Trung
-    html_mt = fetch_kqxs_html(f"/mien-trung?date={d_str}")
-    if html_mt:
-        for rec in parse_mn_mt(html_mt, db_date):
-            if save_to_supabase(rec):
-                total_saved += 1
+    # Kiểm tra lại lần cuối trực tiếp từ Supabase
+    final_count = get_supabase_count(station_id)
+    print(f"🔍 [XÁC THỰC THỰC TẾ SUPABASE] Đài {station_id}: Có chính xác {final_count}/{num_target} kỳ trong CSDL!")
+    return final_count
 
-    print(f"\n🎉 [HOÀN TẤT] Tổng cộng đã lưu {total_saved} đài độc lập vào Supabase!")
+if __name__ == '__main__':
+    target_st = os.environ.get('TARGET_STATION', '').strip().upper()
+
+    if target_st:
+        print(f"🚀 [GIAI ĐOẠN 1] Nạp 50 kỳ cho ĐÀI CHỈ ĐỊNH: {target_st}")
+        scrape_50_draws_for_station(target_st, num_target=50)
+    else:
+        print("🚀 [GIAI ĐOẠN 1] Kiểm tra & Nạp đủ 50 kỳ cho TẤT CẢ CÁC ĐÀI...")
+        for st_id in STATION_SLUGS.keys():
+            scrape_50_draws_for_station(st_id, num_target=50)
+        print(f"\n🏆 [HOÀN TẤT NẠP LỊCH SỬ] Đã kiểm tra và lưu toàn bộ dữ liệu vào Supabase!")
