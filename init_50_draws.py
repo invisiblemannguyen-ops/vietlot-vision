@@ -27,22 +27,12 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates,return=minimal',
 }
 
-# ==================== 2. CAU HINH LICH QUAY & PATHS 3 DAI ====================
+# ==================== 2. CẤU HÌNH ĐÀ NẴNG & KHÁNH HÒA ====================
 STATION_CONFIGS = {
-    "TPHCM": {
-        "name": "TP. Hồ Chí Minh",
-        "aliases": ["TP. HCM", "TP.HCM", "TPHCM", "TP HCM", "HỒ CHÍ MINH", "HO CHI MINH"],
-        "days": (0, 5),  # Thứ 2 & Thứ 7
-        "paths": lambda d: [
-            f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-ho-chi-minh/ngay-{d}",
-            f"/mien-nam/xo-so-tp-hcm/ngay-{d}"
-        ]
-    },
     "DANANG": {
         "name": "Đà Nẵng",
         "aliases": ["ĐÀ NẴNG", "DA NANG", "DANANG", "ĐÀNẮNG"],
-        "days": (2, 5),  # Thứ 4 & Thứ 7
+        "days": (2, 5),  # Thứ 4 (2) & Thứ 7 (5)
         "paths": lambda d: [
             f"/mien-trung?date={d}",
             f"/mien-trung/xo-so-da-nang/ngay-{d}",
@@ -52,7 +42,7 @@ STATION_CONFIGS = {
     "KHANHHOA": {
         "name": "Khánh Hòa",
         "aliases": ["KHÁNH HÒA", "KHANH HOA", "KHANHHOA", "KHÁNHHÒA"],
-        "days": (2, 6),  # Thứ 4 & Chủ Nhật
+        "days": (2, 6),  # Thứ 4 (2) & Chủ Nhật (6)
         "paths": lambda d: [
             f"/mien-trung?date={d}",
             f"/mien-trung/xo-so-khanh-hoa/ngay-{d}",
@@ -93,7 +83,7 @@ def norm(text):
     return unicodedata.normalize('NFC', text).strip().upper()
 
 
-# ==================== 3. SUPABASE: KIEU TRA NGAY DA CO ====================
+# ==================== 3. SUPABASE: KIỂM TRA NGÀY ĐÃ CÓ ====================
 def get_existing_dates(station_id):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return set()
@@ -110,7 +100,7 @@ def get_existing_dates(station_id):
     return set()
 
 
-# ==================== 4. TAI HTML CHONG BOT ====================
+# ==================== 4. TẢI HTML CHỐNG BOT ====================
 def fetch_kqxs_html(path_url):
     domains = ["www.kqxs.vn", "kqxs.vn"]
     headers = {
@@ -217,7 +207,7 @@ def collect_prizes(grid, col=1):
     for r in grid:
         if len(r) <= col:
             continue
-        label = norm(r[0])
+        label = norm(r)
         if any(k in label for k in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'THỐNG KÊ']):
             continue
         key = classify_label(label)
@@ -358,7 +348,7 @@ def scrape_50_for_station(station_id):
 
 
 if __name__ == '__main__':
-    print("🚀 [NẠP 50 KỲ TỔNG HỢP] Chạy nạp cho cả 3 đài (TPHCM, Đà Nẵng, Khánh Hòa)...")
-    for st_id in ["TPHCM", "DANANG", "KHANHHOA"]:
+    print("🚀 [NẠP 50 KỲ] Chạy nạp cho 2 đài (Đà Nẵng, Khánh Hòa)...")
+    for st_id in ["DANANG", "KHANHHOA"]:
         scrape_50_for_station(st_id)
-    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI!"
+    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI!")
