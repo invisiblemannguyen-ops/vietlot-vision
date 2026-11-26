@@ -12,14 +12,13 @@ try:
 except Exception:
     cffi_requests = None
 
-# ==================== 1. CẤU HÌNH ====================
+# ==================== 1. CẤU HÌNH SUPABASE & THAM SỐ ====================
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
-STATION_ID = "TPHCM"
-TARGET_COUNT = 50          # số kỳ cần có trong DB
-MAX_LOOKBACK_DRAWS = 70    # duyệt tối đa bấy nhiêu kỳ mở thưởng (T2 & T7) ngược về trước
-TRUNCATE_DIGITS = 3        # giữ 3 số cuối cho các giải >= 3D, Giải 8 (2D) giữ nguyên.
+TARGET_COUNT = 50          # Số kỳ cần nạp cho mỗi đài
+MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước
+TRUNCATE_DIGITS = 3        # Cắt lấy 3 số cuối (3D) cho các giải >= 3D. Giải 8 (2D) giữ nguyên.
 
 HEADERS_SUPABASE = {
     'apikey': SUPABASE_KEY or '',
@@ -28,7 +27,40 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates,return=minimal',
 }
 
-# Cơ cấu giải TPHCM: số lượng giải và độ dài số của từng giải
+# ==================== 2. CAU HINH LICH QUAY & PATHS 3 DAI ====================
+STATION_CONFIGS = {
+    "TPHCM": {
+        "name": "TP. Hồ Chí Minh",
+        "aliases": ["TP. HCM", "TP.HCM", "TPHCM", "TP HCM", "HỒ CHÍ MINH", "HO CHI MINH"],
+        "days": (0, 5),  # Thứ 2 & Thứ 7
+        "paths": lambda d: [
+            f"/mien-nam?date={d}",
+            f"/mien-nam/xo-so-ho-chi-minh/ngay-{d}",
+            f"/mien-nam/xo-so-tp-hcm/ngay-{d}"
+        ]
+    },
+    "DANANG": {
+        "name": "Đà Nẵng",
+        "aliases": ["ĐÀ NẴNG", "DA NANG", "DANANG", "ĐÀNẮNG"],
+        "days": (2, 5),  # Thứ 4 & Thứ 7
+        "paths": lambda d: [
+            f"/mien-trung?date={d}",
+            f"/mien-trung/xo-so-da-nang/ngay-{d}",
+            f"/mien-trung/xo-so-da-nang?date={d}"
+        ]
+    },
+    "KHANHHOA": {
+        "name": "Khánh Hòa",
+        "aliases": ["KHÁNH HÒA", "KHANH HOA", "KHANHHOA", "KHÁNHHÒA"],
+        "days": (2, 6),  # Thứ 4 & Chủ Nhật
+        "paths": lambda d: [
+            f"/mien-trung?date={d}",
+            f"/mien-trung/xo-so-khanh-hoa/ngay-{d}",
+            f"/mien-trung/xo-so-khanh-hoa?date={d}"
+        ]
+    }
+}
+
 EXPECTED_COUNT = {'DB': 1, 'G1': 1, 'G2': 1, 'G3': 2, 'G4': 7, 'G5': 1, 'G6': 3, 'G7': 1, 'G8': 1}
 EXPECTED_LEN = {
     'DB': (5, 6),
@@ -55,17 +87,14 @@ LABELS = [
     ('G1', ['G.1', 'G1', 'GIẢI 1', 'GIẢI NHẤT']),
 ]
 
-STATION_ALIASES = ["TP. HCM", "TP.HCM", "TPHCM", "TP HCM", "HỒ CHÍ MINH", "HO CHI MINH"]
-
 
 def norm(text):
     text = re.sub(r'\s+', ' ', str(text or ''))
     return unicodedata.normalize('NFC', text).strip().upper()
 
 
-# ==================== 2. SUPABASE: LẤY CÁC NGÀY ĐÃ CÓ ====================
-def get_existing_dates(station_id=STATION_ID):
-    """Trả về set các draw_date (YYYY-MM-DD) đã có trong DB."""
+# ==================== 3. SUPABASE: KIEU TRA NGAY DA CO ====================
+def get_existing_dates(station_id):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return set()
     endpoint = (f"{SUPABASE_URL}/rest/v1/draw_results"
@@ -76,14 +105,12 @@ def get_existing_dates(station_id=STATION_ID):
             data = res.json()
             if isinstance(data, list):
                 return {str(r.get('draw_date'))[:10] for r in data if r.get('draw_date')}
-        else:
-            print(f"  ⚠️ [SUPABASE GET] {res.status_code} - {res.text[:200]}")
     except Exception as e:
         print(f"  ⚠️ [SUPABASE GET] {e}")
     return set()
 
 
-# ==================== 3. TẢI HTML CHỐNG BOT ====================
+# ==================== 4. TAI HTML CHONG BOT ====================
 def fetch_kqxs_html(path_url):
     domains = ["www.kqxs.vn", "kqxs.vn"]
     headers = {
@@ -110,7 +137,6 @@ def fetch_kqxs_html(path_url):
 
 
 def date_in_html(html, d_obj):
-    """Chống lưu nhầm ngày: trang phải thực sự chứa ngày đang cần."""
     d1 = d_obj.strftime("%d-%m-%Y")
     d2 = d_obj.strftime("%d/%m/%Y")
     d3 = d_obj.strftime("%Y-%m-%d")
@@ -118,14 +144,14 @@ def date_in_html(html, d_obj):
 
 
 def format_prize_number(raw_str):
-    """Số >= 3D cắt lấy 3D cuối. Giải 8 (2D) giữ nguyên 2D."""
+    """Số >= 3D lấy 3D cuối. Giải 8 (2D) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if TRUNCATE_DIGITS and len(clean) > TRUNCATE_DIGITS:
         return clean[-TRUNCATE_DIGITS:]
     return clean
 
 
-# ==================== 4. PARSER VẠN NĂNG (BÓC TÁCH ĐA ĐÀI + ĐƠN ĐÀI) ====================
+# ==================== 5. PARSER MA TRẬN VẠN NĂNG ====================
 def classify_label(label):
     for key, words in LABELS:
         if any(w in label for w in words):
@@ -169,8 +195,7 @@ def expand_table(table):
     return grid
 
 
-def find_station_column(grid):
-    """Tìm chỉ số cột của TPHCM ở bảng đa đài hoặc đơn đài."""
+def find_station_column(grid, aliases):
     for row in grid[:4]:
         if len(row) <= 1:
             continue
@@ -179,7 +204,7 @@ def find_station_column(grid):
             if len(txt) > 50:
                 continue
             txt_clean = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', txt)
-            if any(a in txt_clean for a in STATION_ALIASES):
+            if any(a in txt_clean for a in aliases):
                 return idx
     max_cols = max((len(r) for r in grid), default=0)
     if max_cols == 2:
@@ -188,7 +213,6 @@ def find_station_column(grid):
 
 
 def collect_prizes(grid, col=1):
-    """Gom số theo từng giải từ ma trận grid đã mở rộng rowspan."""
     prizes = {}
     for r in grid:
         if len(r) <= col:
@@ -207,7 +231,7 @@ def collect_prizes(grid, col=1):
     return prizes
 
 
-def build_result(prizes, db_date):
+def build_result(prizes, station_id, db_date):
     for key, cnt in EXPECTED_COUNT.items():
         if len(prizes.get(key, [])) != cnt:
             return None
@@ -215,7 +239,7 @@ def build_result(prizes, db_date):
     for key in PRIZE_ORDER:
         raw_prizes.extend(format_prize_number(n) for n in prizes[key])
     return {
-        "station_id": STATION_ID,
+        "station_id": station_id,
         "draw_date": db_date,
         "special_prize": format_prize_number(prizes['DB'][0]),
         "seventh_or_eighth": [format_prize_number(n) for n in prizes['G8']],
@@ -223,22 +247,22 @@ def build_result(prizes, db_date):
     }
 
 
-def parse_tphcm(html, db_date):
+def parse_station_html(html, station_id, aliases, db_date):
     if not html:
         return None
     soup = BeautifulSoup(html, 'html.parser')
     for t in soup.find_all('table'):
         grid = expand_table(t)
-        col = find_station_column(grid)
+        col = find_station_column(grid, aliases)
         if col is not None:
             prizes = collect_prizes(grid, col)
-            result = build_result(prizes, db_date)
+            result = build_result(prizes, station_id, db_date)
             if result:
                 return result
     return None
 
 
-# ==================== 5. LƯU BẢN GHI VÀO SUPABASE ====================
+# ==================== 6. LƯU SUPABASE ====================
 def save_to_supabase(data):
     if not data or not SUPABASE_URL or not SUPABASE_KEY:
         return False
@@ -246,9 +270,10 @@ def save_to_supabase(data):
     raw_prizes = data.get("raw_prizes", [])
     lo_2d = [p[-2:] for p in raw_prizes if len(p) >= 2]
     sp_prize = str(data["special_prize"]).strip()
+    st_id = data["station_id"]
 
     payload = {
-        "station_id": STATION_ID,
+        "station_id": st_id,
         "draw_date": data["draw_date"],
         "special_prize": sp_prize,
         "all_prizes": {
@@ -263,7 +288,7 @@ def save_to_supabase(data):
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"  ✅ [THÀNH CÔNG TPHCM] Ngày: {data['draw_date']} | ĐB (3D): '{sp_prize}' | G8 (2D): {data.get('seventh_or_eighth', [])} | Đủ 18 giải")
+            print(f"  ✅ [THÀNH CÔNG {st_id}] Ngày: {data['draw_date']} | ĐB (3D): '{sp_prize}' | G8 (2D): {data.get('seventh_or_eighth', [])} | Đủ 18 giải")
             return True
         print(f"  ❌ [LỖI LƯU SUPABASE]: {resp.status_code} - {resp.text[:300]}")
     except Exception as e:
@@ -271,26 +296,29 @@ def save_to_supabase(data):
     return False
 
 
-# ==================== 6. NẠP 50 KỲ TPHCM ====================
-def scrape_50_tphcm():
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌ Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong biến môi trường.")
-        sys.exit(1)
+# ==================== 7. CHẠY VÒNG LẶP CHO TỪNG ĐÀI ====================
+def scrape_50_for_station(station_id):
+    cfg = STATION_CONFIGS[station_id]
+    name = cfg["name"]
+    aliases = cfg["aliases"]
+    schedule_days = cfg["days"]
+    path_gen = cfg["paths"]
 
-    existing = get_existing_dates()
-    print(f"🚀 [TPHCM {TARGET_COUNT} KỲ] Đang có {len(existing)}/{TARGET_COUNT} kỳ trong Supabase")
+    existing = get_existing_dates(station_id)
+    print(f"\n==================================================")
+    print(f"🚀 [{name} ({station_id})] Đang có {len(existing)}/{TARGET_COUNT} kỳ trong Supabase")
     if len(existing) >= TARGET_COUNT:
-        print(f"✅ Đài TPHCM ĐÃ ĐỦ {TARGET_COUNT} KỲ!")
+        print(f"✅ Đài {name} ĐÃ ĐỦ {TARGET_COUNT} KỲ!")
         return
 
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date()
     curr = today
-    checked = 0      # số kỳ mở thưởng đã duyệt
-    have = 0         # số kỳ hợp lệ (đã có sẵn + mới nạp) trong các kỳ đã duyệt
+    checked = 0
+    have = len(existing)
     new_saved = 0
 
     while have < TARGET_COUNT and checked < MAX_LOOKBACK_DRAWS:
-        if curr.weekday() not in (0, 5):   # Thứ 2 (0) & Thứ 7 (5)
+        if curr.weekday() not in schedule_days:
             curr -= datetime.timedelta(days=1)
             continue
 
@@ -302,21 +330,16 @@ def scrape_50_tphcm():
         db_date = d_obj.strftime("%Y-%m-%d")
 
         if db_date in existing:
-            have += 1
             continue
 
-        candidate_paths = [
-            f"/mien-nam?date={d_str}",
-            f"/mien-nam/xo-so-ho-chi-minh/ngay-{d_str}",
-            f"/mien-nam/xo-so-tp-hcm/ngay-{d_str}"
-        ]
+        candidate_paths = path_gen(d_str)
 
         parsed = None
         used_path = ""
         for path in candidate_paths:
             html = fetch_kqxs_html(path)
             if html and date_in_html(html, d_obj):
-                parsed = parse_tphcm(html, db_date)
+                parsed = parse_station_html(html, station_id, aliases, db_date)
                 if parsed:
                     used_path = path
                     break
@@ -324,14 +347,18 @@ def scrape_50_tphcm():
         if parsed and save_to_supabase(parsed):
             have += 1
             new_saved += 1
+            existing.add(db_date)
             print(f"  [{have}/{TARGET_COUNT}] Nạp thành công kỳ ngày {db_date} (nguồn: {used_path})")
             time.sleep(0.15)
         elif not parsed:
-            print(f"  ⚠️ Không tìm thấy dữ liệu đài TPHCM cho ngày {d_str}")
+            print(f"  ⚠️ Không tìm thấy dữ liệu đài {name} cho ngày {d_str}")
 
-    final_cnt = len(get_existing_dates())
-    print(f"\n🎉 [HOÀN TẤT] Nạp mới {new_saved} kỳ | TPHCM hiện có {final_cnt}/{TARGET_COUNT} kỳ trong Supabase")
+    final_cnt = len(get_existing_dates(station_id))
+    print(f"🎉 [HOÀN TẤT {station_id}] Nạp mới {new_saved} kỳ | Hiện có {final_cnt}/{TARGET_COUNT} kỳ trong Supabase")
 
 
 if __name__ == '__main__':
-    scrape_50_tphcm()
+    print("🚀 [NẠP 50 KỲ TỔNG HỢP] Chạy nạp cho cả 3 đài (TPHCM, Đà Nẵng, Khánh Hòa)...")
+    for st_id in ["TPHCM", "DANANG", "KHANHHOA"]:
+        scrape_50_for_station(st_id)
+    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI!"
