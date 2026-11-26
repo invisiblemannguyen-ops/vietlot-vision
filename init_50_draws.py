@@ -31,25 +31,26 @@ def get_supabase_count(station_id="TPHCM"):
 
 # ==================== 3. HÀM TẢI HTML CHỐNG BOT ====================
 def fetch_kqxs_html(path_url):
-    domain = "kqxs.vn"
-    full_url = f"https://{domain}{path_url}"
+    domains = ["www.kqxs.vn", "kqxs.vn"]
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
         'Accept-Language': 'vi-VN,vi;q=0.9'
     }
-    try:
-        from curl_cffi import requests as cffi_requests
-        res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=12)
-        if res.status_code == 200 and res.text:
-            return res.text
-    except Exception:
-        pass
-    try:
-        res = requests.get(full_target if 'full_target' in locals() else full_url, headers=headers, timeout=12)
-        if res.status_code == 200 and res.text:
-            return res.text
-    except Exception:
-        pass
+    for domain in domains:
+        full_url = f"https://{domain}{path_url}"
+        try:
+            from curl_cffi import requests as cffi_requests
+            res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=12)
+            if res.status_code == 200 and res.text:
+                return res.text
+        except Exception:
+            pass
+        try:
+            res = requests.get(full_url, headers=headers, timeout=12)
+            if res.status_code == 200 and res.text:
+                return res.text
+        except Exception:
+            pass
     return None
 
 def format_prize_number(raw_str):
@@ -60,8 +61,8 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
-# ==================== 4. PARSER BÓC TÁCH BẢNG GIẢI TP.HCM ====================
-def parse_hcm_page(html, db_date):
+# ==================== 4. PARSER VẠN NĂNG (BÓC TÁCH ĐA ĐÀI + ĐƠN ĐÀI) ====================
+def parse_tphcm(html, db_date):
     if not html:
         return None
     soup = BeautifulSoup(html, 'html.parser')
@@ -69,53 +70,104 @@ def parse_hcm_page(html, db_date):
     if not tables:
         return None
 
-    box_table = None
-    for t in tables:
-        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1|Giải tám|G8', re.I)):
-            box_table = t
-            break
-    if not box_table:
-        box_table = tables[0]  # ✅ Đã sửa: gán Tag thay vì List
-
-    raw_prizes = []
-    special_prize = ""
-    g8_list = []
-
-    for tr in box_table.find_all('tr'):
-        tds = tr.find_all(['td', 'th'])
-        if len(tds) < 2:
-            continue
-
-        label_raw = tds[0].get_text(separator=' ').strip().upper()  # ✅ Đã sửa: tds[0] thay vì tds
-        if any(k in label_raw for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'THỐNG KÊ']):
-            continue
-
-        nums_raw = []
-        for td in tds[1:]:
-            nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
-
-        formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
-        if not formatted_nums:
-            continue
-
-        if any(k in label_raw for k in ['ĐB', 'ĐẶC BIỆT']):
-            special_prize = formatted_nums[0] if formatted_nums else ""
-        elif any(k in label_raw for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM']):
-            g8_list.extend(formatted_nums)
-
-        raw_prizes.extend(formatted_nums)
-
-    # Đảm bảo đủ 18 giải
-    if len(raw_prizes) != 18 or not special_prize:
-        return None
-
-    return {
-        "station_id": "TPHCM",
-        "draw_date": db_date,
-        "special_prize": special_prize,
-        "seventh_or_eighth": g8_list,
-        "raw_prizes": raw_prizes
+    STATION_MAP = {
+        "TP. HCM": "TPHCM", "TP.HCM": "TPHCM", "TPHCM": "TPHCM", "HỒ CHÍ MINH": "TPHCM", "TP HCM": "TPHCM", "HO CHIMINH": "TPHCM"
     }
+
+    # TH1: Bảng Đa đài (Multi-column từ /mien-nam?date=...)
+    for t in tables:
+        rows = t.find_all('tr')
+        col_stations = {}
+        for r in rows:
+            cells = r.find_all(['td', 'th'])
+            if len(cells) <= 1:
+                continue
+            for idx, cell in enumerate(cells):
+                txt = cell.get_text(separator=' ').strip().upper()
+                txt_clean = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', txt).replace('.', '').strip()
+                for k, v in STATION_MAP.items():
+                    if k.upper().replace('.', '') == txt_clean or k.upper() in txt:
+                        col_stations[idx] = v
+                        break
+
+        if "TPHCM" in col_stations.values():
+            target_col_idx = [idx for idx, st in col_stations.items() if st == "TPHCM"]
+            raw_prizes = []
+            special_prize = ""
+            g8_list = []
+
+            for row in rows:
+                tds = row.find_all(['td', 'th'])
+                if len(tds) <= target_col_idx:
+                    continue
+                label_upper = tds.get_text(separator=' ').strip().upper()
+                if any(ignore in label_upper for ignore in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'THỐNG KÊ']):
+                    continue
+                if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
+                    continue
+
+                nums_raw = re.findall(r'\d+', tds[target_col_idx].get_text(separator=' '))
+                formatted = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
+                if not formatted:
+                    continue
+
+                if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM']):
+                    g8_list.extend(formatted)
+                elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
+                    special_prize = formatted if formatted else ""
+
+                raw_prizes.extend(formatted)
+
+            if len(raw_prizes) == 18 and special_prize:
+                return {
+                    "station_id": "TPHCM",
+                    "draw_date": db_date,
+                    "special_prize": special_prize,
+                    "seventh_or_eighth": g8_list,
+                    "raw_prizes": raw_prizes
+                }
+
+    # TH2: Bảng Đơn đài (Single-column từ /mien-nam/xo-so-ho-chi-minh/ngay-...)
+    for t in tables:
+        rows = t.find_all('tr')
+        raw_prizes = []
+        special_prize = ""
+        g8_list = []
+        for r in rows:
+            tds = r.find_all(['td', 'th'])
+            if len(tds) < 2:
+                continue
+            label_upper = tds.get_text(separator=' ').strip().upper()
+            if any(ignore in label_upper for ignore in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'THỐNG KÊ']):
+                continue
+            if not any(k in label_upper for k in ['G.8', 'G.7', 'G.6', 'G.5', 'G.4', 'G.3', 'G.2', 'G.1', 'G8', 'G7', 'G6', 'G5', 'G4', 'G3', 'G2', 'G1', 'ĐB', 'GIẢI', 'ĐẶC BIỆT']):
+                continue
+
+            nums_raw = []
+            for cell in tds[1:]:
+                nums_raw.extend(re.findall(r'\d+', cell.get_text(separator=' ')))
+
+            formatted = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
+            if not formatted:
+                continue
+
+            if any(k in label_upper for k in ['G8', 'G.8', 'GIẢI 8', 'GIẢI TÁM']):
+                g8_list.extend(formatted)
+            elif any(k in label_upper for k in ['ĐB', 'ĐẶC BIỆT']):
+                special_prize = formatted if formatted else ""
+
+            raw_prizes.extend(formatted)
+
+        if len(raw_prizes) == 18 and special_prize:
+            return {
+                "station_id": "TPHCM",
+                "draw_date": db_date,
+                "special_prize": special_prize,
+                "seventh_or_eighth": g8_list,
+                "raw_prizes": raw_prizes
+            }
+
+    return None
 
 # ==================== 5. LƯU BẢN GHI VÀO SUPABASE ====================
 def save_to_supabase(data):
@@ -125,7 +177,7 @@ def save_to_supabase(data):
     raw_prizes = data.get("raw_prizes", [])
     lo_2d = [p[-2:] for p in raw_prizes if len(p) >= 2]
     sp_prize = str(data["special_prize"]).strip()
-    
+
     payload = {
         "station_id": "TPHCM",
         "draw_date": data["draw_date"],
@@ -159,19 +211,18 @@ def scrape_50_tphcm():
         print("✅ Đài TPHCM ĐÃ ĐỦ 50 KỲ!")
         return
 
-    # Lập danh sách đúng 50 ngày mở thưởng cho TPHCM (Thứ 2 = 0, Thứ 7 = 5)
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date()
     target_dates = []
     curr = today
     while len(target_dates) < 50:
-        if curr.weekday() in [0, 5]:  # Thứ 2 (0) & Thứ 7 (5)
+        if curr.weekday() in (0, 5):  # Thứ 2 (0) & Thứ 7 (5)
             target_dates.append(curr)
         curr -= datetime.timedelta(days=1)
 
-    print(f"📌 Đã lập danh sách 50 ngày mở thưởng TP.HCM (Từ {target_dates[0]} về {target_dates[-1]})")
+    print(f"📌 Đã lập danh sách 50 ngày mở thưởng TP.HCM (Từ {target_dates} về {target_dates[-1]})")
 
     saved_count = current_count
-    for d_obj in target_dates:
+    for idx, d_obj in enumerate(target_dates, 1):
         if saved_count >= 50:
             break
 
@@ -179,26 +230,31 @@ def scrape_50_tphcm():
         db_date = d_obj.strftime("%Y-%m-%d")
 
         candidate_paths = [
+            f"/mien-nam?date={d_str}",
             f"/mien-nam/xo-so-ho-chi-minh/ngay-{d_str}",
-            f"/mien-nam/xo-so-tp-hcm/ngay-{d_str}",
-            f"/mien-nam?date={d_str}"
+            f"/mien-nam/xo-so-tp-hcm/ngay-{d_str}"
         ]
 
         parsed = None
+        used_path = ""
         for path in candidate_paths:
             html = fetch_kqxs_html(path)
             if html:
-                parsed = parse_hcm_page(html, db_date)
+                parsed = parse_tphcm(html, db_date)
                 if parsed:
+                    used_path = path
                     break
 
         if parsed:
             if save_to_supabase(parsed):
                 saved_count += 1
-                time.sleep(0.1)
+                print(f"  [{idx}/50] Nạp thành công kỳ ngày {db_date} (nguồn: {used_path})")
+                time.sleep(0.15)
+        else:
+            print(f"  ⚠️ [{idx}/50] Không tìm thấy dữ liệu đài TPHCM cho ngày {d_str}")
 
     final_cnt = get_supabase_count(station_id)
-    print(f"\n🎉 [HOÀN TẤT] TPHCM đã nạp: {final_cnt}/50 kỳ vào Supabase!")
+    print(f"\n🎉 [HOÀN TẤT] TPHCM đã nạp thành công: {final_cnt}/50 kỳ vào Supabase!")
 
 if __name__ == '__main__':
     scrape_50_tphcm()
