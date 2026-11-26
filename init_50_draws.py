@@ -62,7 +62,6 @@ STATION_SLUGS = {
     "KONTUM": "/mien-trung/xo-so-kon-tum"
 }
 
-# Danh sách từ khóa tên đài để đối chiếu chính xác
 STATION_KEYWORDS = {
     "MB": ["MIỀN BẮC", "MIEN BAC", "HÀ NỘI", "HA NOI"],
     "TPHCM": ["TP.HCM", "TP. HCM", "HỒ CHÍ MINH", "HO CHI MINH", "TPHCM"],
@@ -197,7 +196,7 @@ def parse_single_station_page_strict(html, station_id, db_date):
         if len(tds) < 2:
             continue
         
-        label_raw = tds.get_text(separator=' ').strip()
+        label_raw = tds[0].get_text(separator=' ').strip()  # ✅ Đã sửa tds[0]
         label_clean = re.sub(r'\s+', ' ', label_raw).upper()
 
         matched_key = None
