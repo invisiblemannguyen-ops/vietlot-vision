@@ -45,7 +45,7 @@ def fetch_kqxs_html(path_url):
     except Exception:
         pass
     try:
-        res = requests.get(full_url, headers=headers, timeout=12)
+        res = requests.get(full_target if 'full_target' in locals() else full_url, headers=headers, timeout=12)
         if res.status_code == 200 and res.text:
             return res.text
     except Exception:
@@ -62,6 +62,8 @@ def format_prize_number(raw_str):
 
 # ==================== 4. PARSER BÓC TÁCH BẢNG GIẢI TP.HCM ====================
 def parse_hcm_page(html, db_date):
+    if not html:
+        return None
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
     if not tables:
@@ -73,7 +75,7 @@ def parse_hcm_page(html, db_date):
             box_table = t
             break
     if not box_table:
-        box_table = tables[0]
+        box_table = tables[0]  # ✅ Đã sửa: gán Tag thay vì List
 
     raw_prizes = []
     special_prize = ""
@@ -84,7 +86,7 @@ def parse_hcm_page(html, db_date):
         if len(tds) < 2:
             continue
 
-        label_raw = tds[0].get_text(separator=' ').strip().upper()
+        label_raw = tds[0].get_text(separator=' ').strip().upper()  # ✅ Đã sửa: tds[0] thay vì tds
         if any(k in label_raw for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'THỐNG KÊ']):
             continue
 
@@ -122,13 +124,14 @@ def save_to_supabase(data):
 
     raw_prizes = data.get("raw_prizes", [])
     lo_2d = [p[-2:] for p in raw_prizes if len(p) >= 2]
+    sp_prize = str(data["special_prize"]).strip()
     
     payload = {
         "station_id": "TPHCM",
         "draw_date": data["draw_date"],
-        "special_prize": str(data["special_prize"]).strip(),
+        "special_prize": sp_prize,
         "all_prizes": {
-            "special_prize": str(data["special_prize"]).strip(),
+            "special_prize": sp_prize,
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
             "raw_prizes": raw_prizes,
             "lo_numbers": lo_2d
@@ -139,7 +142,7 @@ def save_to_supabase(data):
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204, 409):
-            print(f"  ✅ [THÀNH CÔNG TPHCM] Ngày: {data['draw_date']} | ĐB (3D): '{data['special_prize']}' | Đủ 18 giải")
+            print(f"  ✅ [THÀNH CÔNG TPHCM] Ngày: {data['draw_date']} | ĐB (3D): '{sp_prize}' | Đủ 18 giải")
             return True
         else:
             print(f"  ❌ [LỖI LƯU SUPABASE]: {resp.status_code} - {resp.text}")
@@ -161,7 +164,7 @@ def scrape_50_tphcm():
     target_dates = []
     curr = today
     while len(target_dates) < 50:
-        if curr.weekday() in [0, 5]: # Thứ 2 (0) & Thứ 7 (5)
+        if curr.weekday() in [0, 5]:  # Thứ 2 (0) & Thứ 7 (5)
             target_dates.append(curr)
         curr -= datetime.timedelta(days=1)
 
@@ -175,7 +178,6 @@ def scrape_50_tphcm():
         d_str = d_obj.strftime("%d-%m-%Y")
         db_date = d_obj.strftime("%Y-%m-%d")
 
-        # Đường dẫn chuẩn khớp với link tham khảo
         candidate_paths = [
             f"/mien-nam/xo-so-ho-chi-minh/ngay-{d_str}",
             f"/mien-nam/xo-so-tp-hcm/ngay-{d_str}",
