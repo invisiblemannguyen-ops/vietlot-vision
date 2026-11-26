@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MapPin, Heart, X } from "lucide-react";
+import { MapPin, Heart, X, Copy, Check } from "lucide-react";
 
 export type RegionId = "MB" | "MT" | "MN";
 
@@ -10,6 +10,7 @@ interface SidebarProps {
 
 export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
   const [showQrModal, setShowQrModal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const regions: { id: RegionId; label: string }[] = [
     { id: "MB", label: "XỔ SỐ MIỀN BẮC" },
@@ -17,11 +18,17 @@ export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
     { id: "MN", label: "XỔ SỐ MIỀN NAM" },
   ];
 
+  const handleCopyStk = () => {
+    navigator.clipboard.writeText("00002289129");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <>
-      <aside className="w-24 sm:w-28 md:w-32 shrink-0 h-full border-r border-white/10 bg-slate-900/95 backdrop-blur-xl flex flex-col justify-between p-2 sm:p-3 overflow-y-auto">
+      <aside className="w-24 sm:w-28 md:w-32 shrink-0 h-full border-r border-white/10 bg-slate-900/95 backdrop-blur-xl flex flex-col justify-between p-2 sm:p-3 overflow-y-auto z-20">
         <div>
-          {/* Top Header Logo - Đã bỏ hình vé cược, giữ nguyên Badge AI chuẩn */}
+          {/* Top Header Logo - Không icon vé cược, giữ nguyên chuẩn Badge AI */}
           <div className="flex flex-col items-center justify-center gap-1 py-2 mb-3 border-b border-white/5 text-center">
             <span className="text-amber-300 text-xs sm:text-sm font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2.5 py-0.5 rounded-md border border-amber-400/50 shadow-md">
               AI
@@ -31,7 +38,7 @@ export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
             </span>
           </div>
 
-          {/* Cột nút 3 Miền dạng thẻ dọc */}
+          {/* Cột nút 3 Miền */}
           <div className="flex flex-col gap-2.5">
             {regions.map((reg) => {
               const isActive = selectedRegion === reg.id;
@@ -63,7 +70,7 @@ export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
           </div>
         </div>
 
-        {/* Nút Ủng Hộ Cà Phê ở cuối Sidebar */}
+        {/* Nút Ủng Hộ Cà Phê ☕ */}
         <div className="pt-2 border-t border-white/5 mt-2">
           <button
             onClick={() => setShowQrModal(true)}
@@ -77,11 +84,10 @@ export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
         </div>
       </aside>
 
-      {/* Pop-up Modal hiển thị mã QR Ủng hộ */}
+      {/* Pop-up Modal VietQR từ ảnh 1795707191854.png */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-xs rounded-2xl border border-white/15 bg-slate-900 p-5 shadow-2xl text-center space-y-3">
-            {/* Nút đóng */}
             <button
               onClick={() => setShowQrModal(false)}
               className="absolute top-3 right-3 p-1 text-slate-400 hover:text-white rounded-lg bg-white/5 hover:bg-white/10 transition"
@@ -89,31 +95,50 @@ export function Sidebar({ selectedRegion, onSelectRegion }: SidebarProps) {
               <X className="h-4 w-4" />
             </button>
 
-            {/* Tiêu đề & Lời nhắn */}
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
                 <Heart className="h-4 w-4 text-rose-500 fill-rose-500" />
                 Ủng Hộ Đội Ngũ Phát Triển
               </h3>
-              <p className="text-[11px] text-slate-300 leading-relaxed px-1">
-                Nếu <span className="text-amber-300 font-bold">AI Soi Cầu 3 Miền</span> mang lại may mắn và hữu ích cho bạn, hãy mời đội ngũ 1 ly cà phê ☕ để duy trì máy chủ nhé!
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Nếu <span className="text-amber-300 font-bold">AI Soi Cầu 3 Miền</span> mang lại may mắn, hãy mời đội ngũ 1 ly cà phê ☕ nhé!
               </p>
             </div>
 
-            {/* Mã QR (Thay link ảnh QR ngân hàng / MoMo của bạn vào đây) */}
+            {/* Mã VietQR chuẩn ngân hàng TPBank từ ảnh nguồn */}
             <div className="flex justify-center py-1">
               <div className="p-2 bg-white rounded-xl shadow-md border border-slate-700">
                 <img
                   src="[suspicious link removed]"
-                  alt="Mã QR Ủng hộ"
-                  className="w-40 h-40 object-contain rounded-lg"
+                  alt="Mã VietQR TPBank NGUYEN NGOC NHAT QUANG"
+                  className="w-44 h-44 object-contain rounded-lg"
                 />
               </div>
             </div>
 
-            <p className="text-[10px] text-slate-400">
-              Cảm ơn sự đồng hành và ủng hộ của bạn! ❤️
-            </p>
+            {/* Thông tin tài khoản kèm nút Sao chép */}
+            <div className="bg-white/5 rounded-xl p-2.5 text-xs text-slate-300 space-y-1 border border-white/5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Ngân hàng:</span>
+                <span className="font-bold text-sky-300">TPBank</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Chủ tài khoản:</span>
+                <span className="font-bold text-white uppercase text-[10px]">NGUYỄN NGỌC NHẬT QUANG</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                <span className="text-slate-400">Số tài khoản:</span>
+                <button
+                  onClick={handleCopyStk}
+                  className="font-mono font-bold text-amber-300 flex items-center gap-1 hover:text-amber-200 transition"
+                >
+                  <span>0000 2289 129</span>
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-slate-400">Cảm ơn sự ủng hộ của bạn! ❤️</p>
           </div>
         </div>
       )}
