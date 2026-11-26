@@ -19,7 +19,7 @@ SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 STATION_ID = "TPHCM"
 TARGET_COUNT = 50          # số kỳ cần có trong DB
 MAX_LOOKBACK_DRAWS = 70    # duyệt tối đa bấy nhiêu kỳ mở thưởng (T2 & T7) ngược về trước
-TRUNCATE_DIGITS = 3        # giữ N số cuối của mỗi giải (đúng thiết kế cũ: ĐB -> 3D). Đặt None để giữ nguyên.
+TRUNCATE_DIGITS = 3        # giữ 3 số cuối cho các giải >= 3D, Giải 8 (2D) giữ nguyên.
 
 HEADERS_SUPABASE = {
     'apikey': SUPABASE_KEY or '',
@@ -30,7 +30,17 @@ HEADERS_SUPABASE = {
 
 # Cơ cấu giải TPHCM: số lượng giải và độ dài số của từng giải
 EXPECTED_COUNT = {'DB': 1, 'G1': 1, 'G2': 1, 'G3': 2, 'G4': 7, 'G5': 1, 'G6': 3, 'G7': 1, 'G8': 1}
-EXPECTED_LEN = {'DB': 6, 'G1': 5, 'G2': 5, 'G3': 5, 'G4': 5, 'G5': 4, 'G6': 4, 'G7': 3, 'G8': 2}
+EXPECTED_LEN = {
+    'DB': (5, 6),
+    'G1': (5,),
+    'G2': (5,),
+    'G3': (5,),
+    'G4': (5,),
+    'G5': (4,),
+    'G6': (4, 3),
+    'G7': (3,),
+    'G8': (2,)
+}
 PRIZE_ORDER = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8']
 
 LABELS = [
@@ -101,17 +111,21 @@ def fetch_kqxs_html(path_url):
 
 def date_in_html(html, d_obj):
     """Chống lưu nhầm ngày: trang phải thực sự chứa ngày đang cần."""
-    return (d_obj.strftime("%d-%m-%Y") in html) or (d_obj.strftime("%d/%m/%Y") in html)
+    d1 = d_obj.strftime("%d-%m-%Y")
+    d2 = d_obj.strftime("%d/%m/%Y")
+    d3 = d_obj.strftime("%Y-%m-%d")
+    return (d1 in html) or (d2 in html) or (d3 in html)
 
 
 def format_prize_number(raw_str):
+    """Số >= 3D cắt lấy 3D cuối. Giải 8 (2D) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if TRUNCATE_DIGITS and len(clean) > TRUNCATE_DIGITS:
         return clean[-TRUNCATE_DIGITS:]
     return clean
 
 
-# ==================== 4. PARSER (ĐA ĐÀI + ĐƠN ĐÀI) ====================
+# ==================== 4. PARSER VẠN NĂNG (BÓC TÁCH ĐA ĐÀI + ĐƠN ĐÀI) ====================
 def classify_label(label):
     for key, words in LABELS:
         if any(w in label for w in words):
@@ -119,54 +133,77 @@ def classify_label(label):
     return None
 
 
-def find_station_column(rows):
-    """Tìm chỉ số cột của TPHCM ở bảng đa đài. Trả None nếu là bảng đơn đài."""
+def expand_table(table):
+    """Ma trận hóa bảng HTML xử lý triệt để rowspan/colspan."""
+    rows = table.find_all('tr')
+    grid = []
+    active_rowspans = {}
     for r in rows:
-        cells = r.find_all(['td', 'th'])
-        if len(cells) <= 1:
+        row_cells = []
+        c_idx = 0
+        html_cells = r.find_all(['td', 'th'])
+        cell_iter = iter(html_cells)
+        while True:
+            if c_idx in active_rowspans:
+                rem, text = active_rowspans[c_idx]
+                row_cells.append(text)
+                if rem - 1 > 0:
+                    active_rowspans[c_idx] = (rem - 1, text)
+                else:
+                    del active_rowspans[c_idx]
+                c_idx += 1
+                continue
+            try:
+                cell = next(cell_iter)
+            except StopIteration:
+                break
+            rowspan = int(cell.get('rowspan', 1))
+            colspan = int(cell.get('colspan', 1))
+            text = cell.get_text(separator=' ').strip()
+            for _ in range(colspan):
+                row_cells.append(text)
+                if rowspan > 1:
+                    active_rowspans[c_idx] = (rowspan - 1, text)
+                c_idx += 1
+        grid.append(row_cells)
+    return grid
+
+
+def find_station_column(grid):
+    """Tìm chỉ số cột của TPHCM ở bảng đa đài hoặc đơn đài."""
+    for row in grid[:4]:
+        if len(row) <= 1:
             continue
-        for idx, cell in enumerate(cells):
-            if idx == 0:
+        for idx in range(1, len(row)):
+            txt = norm(row[idx])
+            if len(txt) > 50:
                 continue
-            txt = norm(cell.get_text(' '))
-            if len(txt) > 40:
-                continue
-            txt = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', txt)
-            if any(a in txt for a in STATION_ALIASES):
+            txt_clean = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', txt)
+            if any(a in txt_clean for a in STATION_ALIASES):
                 return idx
+    max_cols = max((len(r) for r in grid), default=0)
+    if max_cols == 2:
+        return 1
     return None
 
 
-def collect_prizes(rows, col=None):
-    """Gom số theo từng giải. Dòng tiếp nối (ô nhãn trống, vd giải tư dòng 2) thuộc giải ngay trước nó."""
+def collect_prizes(grid, col=1):
+    """Gom số theo từng giải từ ma trận grid đã mở rộng rowspan."""
     prizes = {}
-    current = None
-    for r in rows:
-        tds = r.find_all(['td', 'th'])
-        if len(tds) < 2:
+    for r in grid:
+        if len(r) <= col:
             continue
-        label = norm(tds[0].get_text(' '))
-        if label:
-            key = classify_label(label)
-            if key is None:
-                current = None
-                continue
-            current = key
-        elif current is None:
+        label = norm(r[0])
+        if any(k in label for k in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'THỐNG KÊ']):
             continue
-        key = current
-
-        if col is None:
-            cells = tds[1:]
-        else:
-            if col >= len(tds):
-                continue
-            cells = [tds[col]]
-
-        for cell in cells:
-            for n in re.findall(r'\d+', cell.get_text(' ')):
-                if len(n) == EXPECTED_LEN[key]:
-                    prizes.setdefault(key, []).append(n)
+        key = classify_label(label)
+        if not key:
+            continue
+        cell_text = r[col]
+        for n in re.findall(r'\d+', cell_text):
+            valid_lens = EXPECTED_LEN[key] if isinstance(EXPECTED_LEN[key], (tuple, list)) else (EXPECTED_LEN[key],)
+            if len(n) in valid_lens:
+                prizes.setdefault(key, []).append(n)
     return prizes
 
 
@@ -191,11 +228,13 @@ def parse_tphcm(html, db_date):
         return None
     soup = BeautifulSoup(html, 'html.parser')
     for t in soup.find_all('table'):
-        rows = t.find_all('tr')
-        col = find_station_column(rows)
-        result = build_result(collect_prizes(rows, col), db_date)
-        if result:
-            return result
+        grid = expand_table(t)
+        col = find_station_column(grid)
+        if col is not None:
+            prizes = collect_prizes(grid, col)
+            result = build_result(prizes, db_date)
+            if result:
+                return result
     return None
 
 
@@ -224,7 +263,7 @@ def save_to_supabase(data):
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"  ✅ [THÀNH CÔNG TPHCM] Ngày: {data['draw_date']} | ĐB: '{sp_prize}' | Đủ 18 giải")
+            print(f"  ✅ [THÀNH CÔNG TPHCM] Ngày: {data['draw_date']} | ĐB (3D): '{sp_prize}' | G8 (2D): {data.get('seventh_or_eighth', [])} | Đủ 18 giải")
             return True
         print(f"  ❌ [LỖI LƯU SUPABASE]: {resp.status_code} - {resp.text[:300]}")
     except Exception as e:
