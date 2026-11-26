@@ -35,7 +35,7 @@ const PREDICTION_TYPES = [
   { id: "xien_3", title: "Xiên 3", mockNums: "48, 92, 15" },
   { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
   { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
-  { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
+  { id: "doc_dac", title: "Giải Độc Đắc", mockNums: "58294" },
 ];
 
 const WEEKDAYS = ["Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
@@ -160,7 +160,7 @@ export default function App() {
     if (!selectedStation) return mockNums;
     const { canCalculate, targetHour } = checkCalculationTime(selectedStation.region || selectedRegion);
     if (!canCalculate) {
-      return `Giữ trạng thái chờ (Tính tự động lúc ${targetHour}:00)`;
+      return `Chờ tính lúc ${targetHour}:00`;
     }
 
     if (!realPredictions) return "-";
@@ -240,46 +240,49 @@ export default function App() {
   const targetYesterdayStations = scheduledForYesterday.length > 0 ? scheduledForYesterday : stationsInRegion;
 
   return (
-    <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
+    <div className="flex flex-row h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
+      {/* Sidebar bên trái */}
       <Sidebar selectedRegion={selectedRegion} onSelectRegion={handleSelectRegion} />
 
-      <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
-        <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2.5 backdrop-blur-xl shrink-0">
+      {/* Vùng chính vừa vặn trong 100vh */}
+      <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative pb-12">
+        {/* DUY NHẤT 1 HEADER LOGO */}
+        <header className="flex items-center justify-between border-b border-white/10 bg-slate-900/90 px-3 py-2 shrink-0">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
-              <span className="text-amber-300 text-base sm:text-lg font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-lg border border-amber-400/50 shadow-md shadow-rose-500/30">
+              <span className="text-amber-300 text-sm sm:text-base font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-md border border-amber-400/50 shadow-sm">
                 AI
               </span>
-              <span className="font-bold text-sm sm:text-base text-white">Soi Cầu 3 Miền</span>
+              <span className="font-extrabold text-xs sm:text-sm tracking-wide text-white">Soi Cầu 3 Miền</span>
             </div>
-            <span className="text-xs text-sky-400 font-semibold">
+            <span className="text-[11px] text-sky-400 font-bold bg-sky-500/10 px-2 py-0.5 rounded border border-sky-400/20">
               [{REGION_LABELS[selectedRegion] || selectedRegion}]
             </span>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="chip bg-emerald-500/10 text-emerald-300 text-[10px] px-2 py-0.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1" />
-              DB connected
-            </span>
+
+          <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Trực Tuyến</span>
           </div>
         </header>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto border-b border-white/5 bg-ink-900/30 px-3 py-2 shrink-0">
+        {/* Thanh Thứ Trong Tuần */}
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-white/5 bg-slate-900/40 px-2 py-1 shrink-0 scrollbar-none">
           {WEEKDAYS.map((day) => {
             const isToday = day === todayName;
             return (
               <button
                 key={day}
                 disabled={!isToday}
-                className={`shrink-0 rounded-xl px-3 py-1 text-xs font-semibold transition flex items-center gap-1 ${
+                className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition flex items-center gap-1 ${
                   isToday
-                    ? "bg-sky-500 text-slate-950 font-bold shadow-sm shadow-sky-500/30 cursor-default"
-                    : "bg-white/5 text-slate-600 opacity-30 cursor-not-allowed pointer-events-none"
+                    ? "bg-sky-500 text-slate-950 shadow-sm cursor-default"
+                    : "bg-white/5 text-slate-500 opacity-40 pointer-events-none"
                 }`}
               >
                 <span>{day}</span>
                 {isToday && (
-                  <span className="text-[9px] bg-rose-500 text-white px-1 rounded-md font-extrabold">
+                  <span className="text-[8px] bg-rose-500 text-white px-1 rounded font-black">
                     Hôm nay
                   </span>
                 )}
@@ -288,108 +291,110 @@ export default function App() {
           })}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20">
-          <div className="mx-auto w-full max-w-2xl space-y-4">
+        {/* VÙNG CHÍNH CUỘN TRONG MÀN HÌNH */}
+        <div className="flex-1 overflow-y-auto p-2 sm:p-3">
+          <div className="mx-auto w-full max-w-xl space-y-2">
 
             {/* TAB 1: TRANG CHỦ */}
             {activeTab === "home" && (
               <>
+                {/* Chọn đài mở thưởng (Dạng Grid nhỏ gọn) */}
                 {!selectedStation ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between pb-1">
-                      <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 uppercase tracking-wide">
-                        <span className="h-2 w-2 rounded-full bg-sky-400" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                         Đài Mở Thưởng ({selectedDay})
                       </h2>
-                      <span className="text-[11px] text-slate-400">Bấm đài để xem dự đoán</span>
+                      <span className="text-[10px] text-slate-400">Chọn đài xem số</span>
                     </div>
 
-                    <div className="flex flex-col gap-2.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {stationsInRegion.map((st) => (
                         <button
                           key={st.id}
                           onClick={() => handleSelectStation(st)}
-                          className="group flex items-center justify-between rounded-2xl border border-white/10 bg-gradient-to-r from-slate-900/90 to-slate-900/50 p-3.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
+                          className="group flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/90 p-2.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300 font-bold text-xs border border-sky-400/20 shrink-0">
-                              <Star className="h-4 w-4 text-sky-400 fill-sky-400/30" />
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-bold text-white group-hover:text-sky-300">
-                                {st.name}
-                              </h3>
-                              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                                <Clock className="h-3 w-3 text-slate-400" />
-                                <span>Giờ quay: {st.drawTime || st.time || "16:15"}</span>
-                              </p>
-                            </div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400/30 shrink-0" />
+                            <h3 className="text-xs font-bold text-white group-hover:text-sky-300 truncate">
+                              {st.name}
+                            </h3>
                           </div>
 
-                          <div className="flex items-center gap-1 text-xs text-sky-400 font-bold bg-sky-500/10 px-3 py-1.5 rounded-xl border border-sky-400/20 group-hover:bg-sky-500 group-hover:text-slate-950 transition">
-                            <span>Dự đoán</span>
-                            <ChevronRight className="h-3.5 w-3.5" />
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-sky-400" />
+                              {(st as any).drawTime || (st as any).time || "16:15"}
+                            </span>
+                            <ChevronRight className="h-3 w-3 text-sky-400 group-hover:translate-x-0.5 transition" />
                           </div>
                         </button>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  /* 7 MỤC DỰ ĐOÁN (GRID 2 CỘT TỐI ƯU VỪA 1 MÀN HÌNH) */
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5 px-0.5">
                       <button
                         onClick={() => setSelectedStation(null)}
-                        className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white transition"
+                        className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 transition"
                       >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        <span>Chọn đài khác</span>
+                        <ArrowLeft className="h-3 w-3" />
+                        <span>Đổi đài</span>
                       </button>
 
                       <div className="text-right">
-                        <h2 className="text-sm font-bold text-white">{selectedStation.name}</h2>
-                        <p className="text-[11px] text-sky-400">{REGION_LABELS[selectedStation.region] || selectedStation.region}</p>
+                        <h2 className="text-xs font-extrabold text-sky-300">{selectedStation.name}</h2>
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      {PREDICTION_TYPES.map((item) => {
+                    <div className="grid grid-cols-2 gap-2">
+                      {PREDICTION_TYPES.map((item, index) => {
                         const itemKey = `${selectedStation.id}_${item.id}`;
                         const isUnlocked = unlockedItems[itemKey];
                         const displayNums = getPredictionValue(item.id, item.mockNums);
+                        const isFullWidth = index === PREDICTION_TYPES.length - 1 && PREDICTION_TYPES.length % 2 !== 0;
 
                         return (
                           <div
                             key={item.id}
-                            className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/90 p-4 backdrop-blur-md"
+                            className={`relative overflow-hidden rounded-xl border border-white/10 bg-slate-900/90 p-2.5 backdrop-blur-md flex flex-col justify-between ${
+                              isFullWidth ? "col-span-2" : ""
+                            }`}
                           >
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                                <Sparkles className="h-3.5 w-3.5 text-sky-400" />
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="text-[11px] font-bold text-slate-200 flex items-center gap-1 truncate">
+                                <Sparkles className="h-3 w-3 text-sky-400 shrink-0" />
                                 {item.title}
                               </h3>
                               {isUnlocked && (
-                                <span className="text-[11px] text-emerald-400 font-semibold">✓ Đã mở</span>
+                                <span className="text-[9px] text-emerald-400 font-bold">
+                                  ✓ Mở
+                                </span>
                               )}
                             </div>
 
-                            <div className="relative flex items-center justify-center rounded-xl bg-ink-950/90 py-4 px-3 border border-white/5 min-h-[56px]">
+                            <div className="relative flex items-center justify-center rounded-lg bg-slate-950/80 py-2 px-2 border border-white/5 min-h-[40px]">
                               <div
-                                className={`text-base sm:text-lg font-mono font-bold tracking-wider transition-all duration-300 ${
+                                className={`text-xs sm:text-sm font-mono font-bold tracking-wide transition-all ${
                                   isUnlocked
                                     ? "text-sky-300 blur-none select-text"
-                                    : "text-slate-600 blur-md select-none pointer-events-none"
+                                    : "text-slate-600 blur-sm select-none pointer-events-none"
                                 }`}
                               >
                                 {displayNums}
                               </div>
 
                               {!isUnlocked && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45 backdrop-blur-[3px] rounded-xl">
+                                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/50 backdrop-blur-[2px] rounded-lg">
                                   <button
                                     onClick={() => handleUnlock(item.id)}
-                                    className="flex items-center gap-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 px-5 py-1.5 text-xs font-bold text-slate-950 shadow-md shadow-sky-500/30 active:scale-95 transition"
+                                    className="flex items-center gap-1 rounded-md bg-sky-500 hover:bg-sky-400 px-3 py-1 text-[10px] font-extrabold text-slate-950 shadow transition active:scale-95"
                                   >
-                                    <Eye className="h-3.5 w-3.5" />
+                                    <Eye className="h-3 w-3" />
                                     <span>Xem</span>
                                   </button>
                                 </div>
@@ -404,92 +409,84 @@ export default function App() {
               </>
             )}
 
-            {/* TAB 2: KẾT QUẢ XỔ SỐ CỦA TẤT CẢ CÁC ĐÀI MỞ THƯỞNG HÔM QUA */}
+            {/* TAB 2: KẾT QUẢ KỲ TRƯỚC */}
             {activeTab === "results" && (
-              <div className="space-y-5">
-                <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                  <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-sky-400" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-1">
+                  <h2 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-sky-400" />
                     KẾT QUẢ HÔM QUA ({yesterdayName} - {REGION_LABELS[selectedRegion]})
                   </h2>
-                  <span className="text-[11px] text-emerald-400 font-semibold">
-                    {targetYesterdayStations.length} Đài mở thưởng
+                  <span className="text-[10px] text-emerald-400 font-semibold">
+                    {targetYesterdayStations.length} Đài
                   </span>
                 </div>
 
-                {/* Thẻ Thống kê Tỷ lệ Trúng AI (ROI) */}
-                <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-3.5 flex items-center justify-between shadow-lg shadow-sky-500/10">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30">
-                      <TrendingUp className="h-5 w-5" />
+                <div className="rounded-xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/20 text-sky-400 border border-sky-400/30 shrink-0">
+                      <TrendingUp className="h-4 w-4" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Dự Đoán Trúng (ROI)</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Khớp {hitRateStats.hits}/{hitRateStats.total} hạng mục (Kỳ ngày: <span className="text-amber-300 font-bold">{hitRateStats.date}</span>)
+                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Trúng (ROI)</h4>
+                      <p className="text-[10px] text-slate-400">
+                        Khớp {hitRateStats.hits}/{hitRateStats.total} hạng mục (Kỳ: <span className="text-amber-300 font-bold">{hitRateStats.date}</span>)
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-lg font-black text-sky-300">{hitRateStats.rate}</span>
-                    <span className="block text-[10px] text-emerald-400 font-semibold">
-                      <CheckCircle2 className="h-3 w-3 inline mr-0.5" />
-                      Đã kiểm chứng
-                    </span>
+                    <span className="text-base font-black text-sky-300">{hitRateStats.rate}</span>
                   </div>
                 </div>
 
                 {loadingResults ? (
-                  <div className="py-8 text-center text-xs text-sky-400">Đang tải kết quả từ Supabase...</div>
+                  <div className="py-6 text-center text-xs text-sky-400">Đang nạp kết quả từ Supabase...</div>
                 ) : (
-                  /* Hiển thị BẢNG KẾT QUẢ CHO TẤT CẢ CÁC ĐÀI HÔM QUA CỦA MIỀN */
                   targetYesterdayStations.map((st) => {
                     const drawData = yesterdayResults[st.id] || (selectedStation?.id === st.id ? app.draws[0] : null);
                     return (
                       <div
                         key={st.id}
-                        className="rounded-2xl border border-white/10 bg-slate-900/90 p-4 space-y-3 shadow-xl backdrop-blur-md"
+                        className="rounded-xl border border-white/10 bg-slate-900/90 p-3 space-y-2 shadow-lg"
                       >
-                        <div className="text-center pb-2 border-b border-white/5">
-                          <h3 className="text-base font-bold text-sky-300 uppercase tracking-wide">
+                        <div className="text-center pb-1 border-b border-white/5">
+                          <h3 className="text-xs sm:text-sm font-bold text-sky-300 uppercase">
                             {st.name}
                           </h3>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
+                          <p className="text-[10px] text-slate-400">
                             Ngày mở thưởng: <span className="text-amber-300 font-bold">{drawData?.draw_date || "Hôm qua"}</span>
                           </p>
                         </div>
 
-                        {/* Bảng Lưới Giải thưởng (27 Giải MB hoặc 18 Giải MN/MT) */}
-                        <div className="w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/60 text-slate-100 text-xs sm:text-sm font-semibold">
+                        <div className="w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/60 text-slate-100 text-xs font-semibold">
                           {isMB ? (
-                            /* MIỀN BẮC (27 GIẢI) */
                             <table className="w-full border-collapse text-center">
                               <tbody>
                                 <tr className="border-b border-white/10">
-                                  <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
-                                  <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
+                                  <td className="w-20 bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
+                                  <td className="p-1.5 text-base font-extrabold text-rose-400">
                                     {drawData?.special_prize || "-"}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
-                                  <td className="p-2.5 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
+                                  <td className="p-1.5 font-bold text-white">
                                     {drawData?.lo_numbers?.[0] || "-"}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
-                                  <td className="p-2.5">
-                                    <div className="grid grid-cols-2 gap-2 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
+                                  <td className="p-1.5">
+                                    <div className="grid grid-cols-2 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[1] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[2] || "-"}</span>
                                     </div>
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
-                                  <td className="p-2.5">
-                                    <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
+                                  <td className="p-1.5">
+                                    <div className="grid grid-cols-3 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[3] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[4] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[5] || "-"}</span>
@@ -500,8 +497,8 @@ export default function App() {
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
-                                  <td className="p-2.5">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
+                                  <td className="p-1.5">
                                     <div className="grid grid-cols-4 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[9] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[10] || "-"}</span>
@@ -511,9 +508,9 @@ export default function App() {
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
-                                  <td className="p-2.5">
-                                    <div className="grid grid-cols-3 gap-y-2 gap-x-1 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
+                                  <td className="p-1.5">
+                                    <div className="grid grid-cols-3 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[13] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[14] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[15] || "-"}</span>
@@ -524,8 +521,8 @@ export default function App() {
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
-                                  <td className="p-2.5">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
+                                  <td className="p-1.5">
                                     <div className="grid grid-cols-3 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[19] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[20] || "-"}</span>
@@ -534,8 +531,8 @@ export default function App() {
                                   </td>
                                 </tr>
                                 <tr>
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
-                                  <td className="p-2.5">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
+                                  <td className="p-1.5">
                                     <div className="grid grid-cols-4 gap-1 font-bold text-sky-300">
                                       <span>{drawData?.seventh_or_eighth?.[0] || drawData?.lo_numbers?.[22] || "-"}</span>
                                       <span>{drawData?.seventh_or_eighth?.[1] || drawData?.lo_numbers?.[23] || "-"}</span>
@@ -547,24 +544,23 @@ export default function App() {
                               </tbody>
                             </table>
                           ) : (
-                            /* MIỀN TRUNG / MIỀN NAM (18 GIẢI TỪ GIẢI 8 ĐẾN ĐẶC BIỆT) */
                             <table className="w-full border-collapse text-center">
                               <tbody>
                                 <tr className="border-b border-white/10">
-                                  <td className="w-24 bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tám</td>
-                                  <td className="p-2.5 font-bold text-sky-300 text-base">
+                                  <td className="w-20 bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải tám</td>
+                                  <td className="p-1.5 font-bold text-sky-300 text-sm">
                                     {drawData?.seventh_or_eighth?.[0] || drawData?.lo_numbers?.[0] || "-"}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
-                                  <td className="p-2.5 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải bảy</td>
+                                  <td className="p-1.5 font-bold text-white">
                                     {drawData?.lo_numbers?.[1] || "-"}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
-                                  <td className="p-2.5">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải sáu</td>
+                                  <td className="p-1.5">
                                     <div className="grid grid-cols-3 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[2] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[3] || "-"}</span>
@@ -573,15 +569,15 @@ export default function App() {
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
-                                  <td className="p-2.5 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải năm</td>
+                                  <td className="p-1.5 font-bold text-white">
                                     {drawData?.lo_numbers?.[5] || "-"}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
-                                  <td className="p-2.5">
-                                    <div className="grid grid-cols-4 gap-y-1 gap-x-1 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải tư</td>
+                                  <td className="p-1.5">
+                                    <div className="grid grid-cols-4 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[6] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[7] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[8] || "-"}</span>
@@ -593,29 +589,29 @@ export default function App() {
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
-                                  <td className="p-2.5">
-                                    <div className="grid grid-cols-2 gap-2 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
+                                  <td className="p-1.5">
+                                    <div className="grid grid-cols-2 gap-1 font-bold text-white">
                                       <span>{drawData?.lo_numbers?.[13] || "-"}</span>
                                       <span>{drawData?.lo_numbers?.[14] || "-"}</span>
                                     </div>
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
-                                  <td className="p-2.5 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
+                                  <td className="p-1.5 font-bold text-white">
                                     {drawData?.lo_numbers?.[15] || "-"}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-white/10">
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
-                                  <td className="p-2.5 font-bold text-white">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
+                                  <td className="p-1.5 font-bold text-white">
                                     {drawData?.lo_numbers?.[16] || "-"}
                                   </td>
                                 </tr>
                                 <tr>
-                                  <td className="bg-white/5 p-2.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
-                                  <td className="p-2.5 text-lg sm:text-xl font-extrabold text-rose-400 tracking-wider">
+                                  <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
+                                  <td className="p-1.5 text-base font-extrabold text-rose-400">
                                     {drawData?.special_prize || "-"}
                                   </td>
                                 </tr>
@@ -633,24 +629,25 @@ export default function App() {
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 h-14 bg-ink-900/95 border-t border-white/10 backdrop-blur-xl px-6 flex justify-around items-center z-30">
+        {/* Thanh Tab chuyển dưới cùng */}
+        <div className="absolute bottom-0 left-0 right-0 h-12 bg-slate-900/95 border-t border-white/10 backdrop-blur-md px-8 flex justify-around items-center z-30">
           <button
             onClick={() => setActiveTab("home")}
-            className={`flex flex-col items-center gap-0.5 text-[11px] font-bold transition ${
-              activeTab === "home" ? "text-sky-400" : "text-slate-400 hover:text-slate-200"
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition ${
+              activeTab === "home" ? "text-sky-400" : "text-slate-500 hover:text-slate-300"
             }`}
           >
-            <Home className="h-4.5 w-4.5" />
+            <Home className="h-4 w-4" />
             <span>Trang Chủ</span>
           </button>
 
           <button
             onClick={() => setActiveTab("results")}
-            className={`flex flex-col items-center gap-0.5 text-[11px] font-bold transition ${
-              activeTab === "results" ? "text-sky-400" : "text-slate-400 hover:text-slate-200"
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition ${
+              activeTab === "results" ? "text-sky-400" : "text-slate-500 hover:text-slate-300"
             }`}
           >
-            <Award className="h-4.5 w-4.5" />
+            <Award className="h-4 w-4" />
             <span>Kết Quả</span>
           </button>
         </div>
