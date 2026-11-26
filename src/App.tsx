@@ -35,7 +35,7 @@ const PREDICTION_TYPES = [
   { id: "xien_3", title: "Xiên 3", mockNums: "48, 92, 15" },
   { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
   { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
-  { id: "doc_dac", title: "Giải Độc Đắc", mockNums: "58294" },
+  { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
 ];
 
 const WEEKDAYS = ["Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
@@ -240,44 +240,37 @@ export default function App() {
   const targetYesterdayStations = scheduledForYesterday.length > 0 ? scheduledForYesterday : stationsInRegion;
 
   return (
-    <div className="flex flex-row h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
-      {/* Sidebar bên trái */}
+    <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
       <Sidebar selectedRegion={selectedRegion} onSelectRegion={handleSelectRegion} />
 
-      {/* Vùng chính vừa vặn trong 100vh */}
-      <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative pb-12">
-        {/* DUY NHẤT 1 HEADER LOGO */}
-        <header className="flex items-center justify-between border-b border-white/10 bg-slate-900/90 px-3 py-2 shrink-0">
+      <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
+        {/* HEADER TRÊN CÙNG: CHỈ HIỂN THỊ MIỀN ĐANG CHỌN (ĐÃ XÓA LOGO TRÙNG VỚI SIDEBAR) */}
+        <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-1.5 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="text-amber-300 text-sm sm:text-base font-black bg-gradient-to-r from-rose-600 to-amber-500 px-2 py-0.5 rounded-md border border-amber-400/50 shadow-sm">
-                AI
-              </span>
-              <span className="font-extrabold text-xs sm:text-sm tracking-wide text-white">Soi Cầu 3 Miền</span>
-            </div>
-            <span className="text-[11px] text-sky-400 font-bold bg-sky-500/10 px-2 py-0.5 rounded border border-sky-400/20">
-              [{REGION_LABELS[selectedRegion] || selectedRegion}]
+            <span className="text-xs sm:text-sm text-sky-400 font-extrabold uppercase tracking-wide">
+              {REGION_LABELS[selectedRegion] || selectedRegion}
             </span>
           </div>
-
-          <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Trực Tuyến</span>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="chip bg-emerald-500/10 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1 animate-pulse" />
+              DB connected
+            </span>
           </div>
         </header>
 
-        {/* Thanh Thứ Trong Tuần */}
-        <div className="flex items-center gap-1 overflow-x-auto border-b border-white/5 bg-slate-900/40 px-2 py-1 shrink-0 scrollbar-none">
+        {/* THANH THỨ TRONG TUẦN THU GỌN */}
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-white/5 bg-ink-900/30 px-2 py-1 shrink-0 scrollbar-none">
           {WEEKDAYS.map((day) => {
             const isToday = day === todayName;
             return (
               <button
                 key={day}
                 disabled={!isToday}
-                className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition flex items-center gap-1 ${
+                className={`shrink-0 rounded-lg px-2.5 py-0.5 text-[11px] font-bold transition flex items-center gap-1 ${
                   isToday
-                    ? "bg-sky-500 text-slate-950 shadow-sm cursor-default"
-                    : "bg-white/5 text-slate-500 opacity-40 pointer-events-none"
+                    ? "bg-sky-500 text-slate-950 font-extrabold shadow-sm cursor-default"
+                    : "bg-white/5 text-slate-600 opacity-30 cursor-not-allowed pointer-events-none"
                 }`}
               >
                 <span>{day}</span>
@@ -291,67 +284,66 @@ export default function App() {
           })}
         </div>
 
-        {/* VÙNG CHÍNH CUỘN TRONG MÀN HÌNH */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-3">
+        {/* NỘI DUNG CHÍNH (VỪA VẶN 1 MÀN HÌNH - KHÔNG CẦN KÉO CUỘN) */}
+        <div className="flex-1 overflow-y-auto p-2 pb-14">
           <div className="mx-auto w-full max-w-xl space-y-2">
 
             {/* TAB 1: TRANG CHỦ */}
             {activeTab === "home" && (
               <>
-                {/* Chọn đài mở thưởng (Dạng Grid nhỏ gọn) */}
                 {!selectedStation ? (
+                  /* BƯỚC 1: DANH SÁCH ĐÀI MỞ THƯỞNG (DẠNG GRID CỰC GỌN VỪA KHUNG) */
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between px-1">
-                      <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <h2 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wide">
                         <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                         Đài Mở Thưởng ({selectedDay})
                       </h2>
-                      <span className="text-[10px] text-slate-400">Chọn đài xem số</span>
+                      <span className="text-[10px] text-slate-400">Bấm đài xem số</span>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                       {stationsInRegion.map((st) => (
                         <button
                           key={st.id}
                           onClick={() => handleSelectStation(st)}
-                          className="group flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/90 p-2.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
+                          className="group flex flex-col justify-between rounded-xl border border-white/10 bg-gradient-to-r from-slate-900/90 to-slate-900/50 p-2.5 text-left transition-all hover:border-sky-400/50 hover:bg-sky-500/10 shadow-sm"
                         >
                           <div className="flex items-center gap-2 mb-1">
-                            <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400/30 shrink-0" />
+                            <Star className="h-3.5 w-3.5 text-sky-400 fill-sky-400/30 shrink-0" />
                             <h3 className="text-xs font-bold text-white group-hover:text-sky-300 truncate">
                               {st.name}
                             </h3>
                           </div>
-
                           <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
                             <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-sky-400" />
-                              {(st as any).drawTime || (st as any).time || "16:15"}
+                              <Clock className="h-3 w-3 text-slate-400" />
+                              {st.drawTime || st.time || "16:15"}
                             </span>
-                            <ChevronRight className="h-3 w-3 text-sky-400 group-hover:translate-x-0.5 transition" />
+                            <ChevronRight className="h-3 w-3 text-sky-400" />
                           </div>
                         </button>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  /* 7 MỤC DỰ ĐOÁN (GRID 2 CỘT TỐI ƯU VỪA 1 MÀN HÌNH) */
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5 px-0.5">
+                  /* BƯỚC 2: 7 MỤC DỰ ĐOÁN (GRID 2 CỘT TỐI ƯU VỪA 1 MÀN HÌNH HẲN) */
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-1 px-0.5">
                       <button
                         onClick={() => setSelectedStation(null)}
-                        className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 transition"
+                        className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-white/10 transition"
                       >
                         <ArrowLeft className="h-3 w-3" />
                         <span>Đổi đài</span>
                       </button>
 
                       <div className="text-right">
-                        <h2 className="text-xs font-extrabold text-sky-300">{selectedStation.name}</h2>
+                        <h2 className="text-xs font-bold text-white">{selectedStation.name}</h2>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-1.5">
                       {PREDICTION_TYPES.map((item, index) => {
                         const itemKey = `${selectedStation.id}_${item.id}`;
                         const isUnlocked = unlockedItems[itemKey];
@@ -361,25 +353,23 @@ export default function App() {
                         return (
                           <div
                             key={item.id}
-                            className={`relative overflow-hidden rounded-xl border border-white/10 bg-slate-900/90 p-2.5 backdrop-blur-md flex flex-col justify-between ${
+                            className={`relative overflow-hidden rounded-xl border border-white/10 bg-slate-900/90 p-2 backdrop-blur-md flex flex-col justify-between ${
                               isFullWidth ? "col-span-2" : ""
                             }`}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <h3 className="text-[11px] font-bold text-slate-200 flex items-center gap-1 truncate">
+                              <h3 className="text-[11px] font-bold text-white flex items-center gap-1 truncate">
                                 <Sparkles className="h-3 w-3 text-sky-400 shrink-0" />
                                 {item.title}
                               </h3>
                               {isUnlocked && (
-                                <span className="text-[9px] text-emerald-400 font-bold">
-                                  ✓ Mở
-                                </span>
+                                <span className="text-[9px] text-emerald-400 font-semibold">✓ Đã mở</span>
                               )}
                             </div>
 
-                            <div className="relative flex items-center justify-center rounded-lg bg-slate-950/80 py-2 px-2 border border-white/5 min-h-[40px]">
+                            <div className="relative flex items-center justify-center rounded-lg bg-ink-950/90 py-1.5 px-2 border border-white/5 min-h-[36px]">
                               <div
-                                className={`text-xs sm:text-sm font-mono font-bold tracking-wide transition-all ${
+                                className={`text-xs font-mono font-bold tracking-wider transition-all duration-300 ${
                                   isUnlocked
                                     ? "text-sky-300 blur-none select-text"
                                     : "text-slate-600 blur-sm select-none pointer-events-none"
@@ -392,7 +382,7 @@ export default function App() {
                                 <div className="absolute inset-0 flex items-center justify-center bg-slate-950/50 backdrop-blur-[2px] rounded-lg">
                                   <button
                                     onClick={() => handleUnlock(item.id)}
-                                    className="flex items-center gap-1 rounded-md bg-sky-500 hover:bg-sky-400 px-3 py-1 text-[10px] font-extrabold text-slate-950 shadow transition active:scale-95"
+                                    className="flex items-center gap-1 rounded-md bg-sky-500 hover:bg-sky-400 px-3 py-0.5 text-[10px] font-bold text-slate-950 shadow active:scale-95 transition"
                                   >
                                     <Eye className="h-3 w-3" />
                                     <span>Xem</span>
@@ -411,31 +401,31 @@ export default function App() {
 
             {/* TAB 2: KẾT QUẢ KỲ TRƯỚC */}
             {activeTab === "results" && (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between border-b border-white/5 pb-1">
                   <h2 className="text-xs font-bold text-white flex items-center gap-1.5">
                     <Calendar className="h-3.5 w-3.5 text-sky-400" />
                     KẾT QUẢ HÔM QUA ({yesterdayName} - {REGION_LABELS[selectedRegion]})
                   </h2>
                   <span className="text-[10px] text-emerald-400 font-semibold">
-                    {targetYesterdayStations.length} Đài
+                    {targetYesterdayStations.length} Đài mở thưởng
                   </span>
                 </div>
 
-                <div className="rounded-xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
+                <div className="rounded-xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-2.5 flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/20 text-sky-400 border border-sky-400/30 shrink-0">
                       <TrendingUp className="h-4 w-4" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Trúng (ROI)</h4>
+                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Dự Đoán Trúng (ROI)</h4>
                       <p className="text-[10px] text-slate-400">
                         Khớp {hitRateStats.hits}/{hitRateStats.total} hạng mục (Kỳ: <span className="text-amber-300 font-bold">{hitRateStats.date}</span>)
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-base font-black text-sky-300">{hitRateStats.rate}</span>
+                    <span className="text-sm font-black text-sky-300">{hitRateStats.rate}</span>
                   </div>
                 </div>
 
@@ -447,10 +437,10 @@ export default function App() {
                     return (
                       <div
                         key={st.id}
-                        className="rounded-xl border border-white/10 bg-slate-900/90 p-3 space-y-2 shadow-lg"
+                        className="rounded-xl border border-white/10 bg-slate-900/90 p-3 space-y-2 shadow-md backdrop-blur-md"
                       >
                         <div className="text-center pb-1 border-b border-white/5">
-                          <h3 className="text-xs sm:text-sm font-bold text-sky-300 uppercase">
+                          <h3 className="text-xs font-bold text-sky-300 uppercase tracking-wide">
                             {st.name}
                           </h3>
                           <p className="text-[10px] text-slate-400">
@@ -464,7 +454,7 @@ export default function App() {
                               <tbody>
                                 <tr className="border-b border-white/10">
                                   <td className="w-20 bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
-                                  <td className="p-1.5 text-base font-extrabold text-rose-400">
+                                  <td className="p-1.5 text-sm font-extrabold text-rose-400 tracking-wider">
                                     {drawData?.special_prize || "-"}
                                   </td>
                                 </tr>
@@ -611,7 +601,7 @@ export default function App() {
                                 </tr>
                                 <tr>
                                   <td className="bg-white/5 p-1.5 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
-                                  <td className="p-1.5 text-base font-extrabold text-rose-400">
+                                  <td className="p-1.5 text-sm font-extrabold text-rose-400 tracking-wider">
                                     {drawData?.special_prize || "-"}
                                   </td>
                                 </tr>
@@ -629,25 +619,25 @@ export default function App() {
           </div>
         </div>
 
-        {/* Thanh Tab chuyển dưới cùng */}
-        <div className="absolute bottom-0 left-0 right-0 h-12 bg-slate-900/95 border-t border-white/10 backdrop-blur-md px-8 flex justify-around items-center z-30">
+        {/* THANH TAB DƯỚI CÙNG CO GIÃN H-12 CỐ ĐỊNH */}
+        <div className="absolute bottom-0 left-0 right-0 h-12 bg-ink-900/95 border-t border-white/10 backdrop-blur-xl px-6 flex justify-around items-center z-30">
           <button
             onClick={() => setActiveTab("home")}
-            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition ${
-              activeTab === "home" ? "text-sky-400" : "text-slate-500 hover:text-slate-300"
+            className={`flex flex-col items-center gap-0.5 text-[11px] font-bold transition ${
+              activeTab === "home" ? "text-sky-400" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Home className="h-4 w-4" />
+            <Home className="h-4.5 w-4.5" />
             <span>Trang Chủ</span>
           </button>
 
           <button
             onClick={() => setActiveTab("results")}
-            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition ${
-              activeTab === "results" ? "text-sky-400" : "text-slate-500 hover:text-slate-300"
+            className={`flex flex-col items-center gap-0.5 text-[11px] font-bold transition ${
+              activeTab === "results" ? "text-sky-400" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Award className="h-4 w-4" />
+            <Award className="h-4.5 w-4.5" />
             <span>Kết Quả</span>
           </button>
         </div>
