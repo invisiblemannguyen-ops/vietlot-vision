@@ -112,7 +112,7 @@ export default function App() {
     if (app.selectStation) app.selectStation(st.id);
   };
 
-  // NẠP BỘ SỐ DỰ ĐOÁN ĐÃ TÍNH SẴN TỪ BẢNG PREDICTIONS SUPABASE
+  // NẠP BỘ SỐ DỰ ĐOÁN ĐÃ TÍNH SẴN TỪ BẢNG PREDICTIONS SUPABASE (CÁCH 2 - CHỐNG LỘ THUẬT TOÁN)
   useEffect(() => {
     if (selectedStation) {
       setLoadingPredictions(true);
@@ -144,13 +144,13 @@ export default function App() {
     }
   }, [selectedStation]);
 
-  // NẠP KẾT QUẢ XỔ SỐ TỪ CSDL SUPABASE
+  // NẠP KẾT QUẢ XỔ SỐ TỪ CSDL SUPABASE CHO TAB KẾT QUẢ
   useEffect(() => {
     if (activeTab === "results") {
       setLoadingResults(true);
       const promises = stationsInRegion.map(async (st) => {
         const d = await fetchDrawsFromSupabase(st.id);
-        return { id: st.id, draw: d && d.length > 0 ? d : null };
+        return { id: st.id, draw: d && d.length > 0 ? d[0] : null };
       });
 
       Promise.all(promises).then((resList) => {
@@ -401,18 +401,18 @@ export default function App() {
                               </tr>
                               <tr className="border-b border-white/10">
                                 <td className="bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
-                                <td className="p-1 font-bold text-white">{drawData.lo_numbers?. || "-"}</td>
+                                <td className="p-1 font-bold text-white">{drawData.lo_numbers?.[0] || "-"}</td>
                               </tr>
                               <tr className="border-b border-white/10">
                                 <td className="bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
                                 <td className="p-1 font-bold text-white">
-                                  {(drawData.lo_numbers?. || "-") + " - " + (drawData.lo_numbers?. || "-")}
+                                  {(drawData.lo_numbers?.[1] || "-") + " - " + (drawData.lo_numbers?.[2] || "-")}
                                 </td>
                               </tr>
                               <tr className="border-b border-white/10">
                                 <td className="bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Giải ba</td>
                                 <td className="p-1 font-bold text-white">
-                                  {(drawData.lo_numbers?. || "-") + " - " + (drawData.lo_numbers?. || "-") + " - " + (drawData.lo_numbers?. || "-")}
+                                  {(drawData.lo_numbers?.[3] || "-") + " - " + (drawData.lo_numbers?.[4] || "-") + " - " + (drawData.lo_numbers?.[5] || "-")}
                                 </td>
                               </tr>
                               <tr>
@@ -429,16 +429,16 @@ export default function App() {
                               <tr className="border-b border-white/10">
                                 <td className="w-20 bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Giải tám</td>
                                 <td className="p-1 font-bold text-sky-300 text-sm">
-                                  {drawData.seventh_or_eighth?. || "-"}
+                                  {drawData.seventh_or_eighth?.[0] || "-"}
                                 </td>
                               </tr>
                               <tr className="border-b border-white/10">
                                 <td className="bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Giải nhất</td>
-                                <td className="p-1 font-bold text-white">{drawData.lo_numbers?. || "-"}</td>
+                                <td className="p-1 font-bold text-white">{drawData.lo_numbers?.[0] || "-"}</td>
                               </tr>
                               <tr className="border-b border-white/10">
                                 <td className="bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Giải nhì</td>
-                                <td className="p-1 font-bold text-white">{drawData.lo_numbers?. || "-"}</td>
+                                <td className="p-1 font-bold text-white">{drawData.lo_numbers?.[1] || "-"}</td>
                               </tr>
                               <tr>
                                 <td className="bg-white/5 p-1 text-slate-300 border-r border-white/10 font-bold">Đặc biệt</td>
@@ -462,4 +462,4 @@ export default function App() {
       </main>
     </div>
   );
-}7
+}
