@@ -1,0 +1,48 @@
+name: Daily KQXS Scraper (MN, MT, MB)
+
+on:
+  schedule:
+    # 16:45 Giờ Việt Nam (9:45 UTC) - Cào Miền Nam
+    - cron: '45 9 * * *'
+    # 17:45 Giờ Việt Nam (10:45 UTC) - Cào Miền Trung
+    - cron: '45 10 * * *'
+    # 18:45 Giờ Việt Nam (11:45 UTC) - Cào Miền Bắc
+    - cron: '45 11 * * *'
+  workflow_dispatch: # Cho phép bấm chạy tay bất kỳ lúc nào trên GitHub
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          pip install requests beautifulsoup4 curl_cffi
+
+      - name: Run Scraper for MN (16:45)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 9 * * *'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python daily_scraper.py --region MN
+
+      - name: Run Scraper for MT (17:45)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 10 * * *'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python daily_scraper.py --region MT
+
+      - name: Run Scraper for MB (18:45)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 11 * * *'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python daily_scraper.py --region MB
