@@ -2,13 +2,13 @@ name: Daily KQXS Scraper (MN, MT, MB)
 
 on:
   schedule:
-    # 16:45 Giờ Việt Nam (9:45 UTC) - Cào Miền Nam
-    - cron: '45 9 * * *'
-    # 17:45 Giờ Việt Nam (10:45 UTC) - Cào Miền Trung
-    - cron: '45 10 * * *'
-    # 18:45 Giờ Việt Nam (11:45 UTC) - Cào Miền Bắc
-    - cron: '45 11 * * *'
-  workflow_dispatch: # Cho phép bấm chạy tay bất kỳ lúc nào trên GitHub
+    # 16:35 Giờ Việt Nam (9:35 UTC) - Cào Miền Nam
+    - cron: '35 9 * * *'
+    # 17:35 Giờ Việt Nam (10:35 UTC) - Cào Miền Trung
+    - cron: '35 10 * * *'
+    # 18:35 Giờ Việt Nam (11:35 UTC) - Cào Miền Bắc
+    - cron: '35 11 * * *'
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -26,23 +26,29 @@ jobs:
         run: |
           pip install requests beautifulsoup4 curl_cffi
 
-      - name: Run Scraper for MN (16:45)
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 9 * * *'
+      - name: Run Scraper for MN (16:35)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 9 * * *'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
         run: python daily_scraper.py --region MN
 
-      - name: Run Scraper for MT (17:45)
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 10 * * *'
+      - name: Run Scraper for MT (17:35)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 10 * * *'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
         run: python daily_scraper.py --region MT
 
-      - name: Run Scraper for MB (18:45)
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '45 11 * * *'
+      - name: Run Scraper for MB (18:35)
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 11 * * *'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
         run: python daily_scraper.py --region MB
