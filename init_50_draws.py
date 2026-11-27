@@ -12,15 +12,15 @@ try:
 except Exception:
     cffi_requests = None
 
-# ==================== 1. CẤU HÌNH ĐÀI ĐẮK LẮK ====================
+# ==================== 1. CẤU HÌNH ĐÀI THỪA THIÊN HUẾ ====================
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
-STATION_ID = "DAKLAK"
-STATION_NAME = "Đắc Lắc"
+STATION_ID = "TTHUE"
+STATION_NAME = "Thừa Thiên Huế"
 REGION = "MT"
 TARGET_COUNT = 50          # Số kỳ cần nạp
-MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 3)
+MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 2 & Chủ Nhật)
 TRUNCATE_DIGITS = 3        # Cắt lấy 3D cho các giải >= 3D, Giải 8 (2D) giữ nguyên.
 
 HEADERS_SUPABASE = {
@@ -56,11 +56,8 @@ LABELS = [
     ('G1', ['G.1', 'G1', 'GIẢI 1', 'GIẢI NHẤT']),
 ]
 
-# Đã bổ sung đầy đủ nhãn hiển thị của đài Đắc Lắc / Đắk Lắk
-STATION_ALIASES = [
-    "ĐẮK LẮK", "ĐẮC LẮC", "DAK LAK", "DAC LAC", "DAKLAK", "DACLAK",
-    "ĐẮKLẮK", "ĐẮCLẮC", "ĐAC LAK", "ĐAK LAK", "ĐẮC LẮK"
-]
+# Các nhãn hiển thị của đài Thừa Thiên Huế
+STATION_ALIASES = ["THỪA THIÊN HUẾ", "T.T.HUẾ", "TTHUE", "HUẾ", "THỦA THIÊN HUẾ"]
 
 
 def norm(text):
@@ -259,7 +256,7 @@ def build_result(prizes, db_date):
     }
 
 
-def parse_daklak(html, db_date):
+def parse_tthue(html, db_date):
     if not html:
         return None
     soup = BeautifulSoup(html, 'html.parser')
@@ -299,7 +296,7 @@ def save_to_supabase(data):
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"  ✅ [THÀNH CÔNG ĐẮK LẮK] Ngày: {data['draw_date']} | ĐB (3D): '{sp_prize}' | G8 (2D): {data.get('seventh_or_eighth', [])} | Đủ 18 giải")
+            print(f"  ✅ [THÀNH CÔNG THỪA THIÊN HUẾ] Ngày: {data['draw_date']} | ĐB (3D): '{sp_prize}' | G8 (2D): {data.get('seventh_or_eighth', [])} | Đủ 18 giải")
             return True
         print(f"  ❌ [LỖI LƯU SUPABASE]: {resp.status_code} - {resp.text[:300]}")
     except Exception as e:
@@ -307,14 +304,18 @@ def save_to_supabase(data):
     return False
 
 
-# ==================== 7. CHƯƠNG TRÌNH NẠP 50 KỲ ĐẮK LẮK ====================
-def scrape_50_daklak():
+# ==================== 7. CHƯƠNG TRÌNH NẠP 50 KỲ THỪA THIÊN HUẾ (T2 & CN) ====================
+def scrape_50_tthue():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("❌ Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong biến môi trường.")
+        sys.exit(1)
+
     ensure_station_exists()
 
     existing = get_existing_dates()
-    print(f"🚀 [ĐẮK LẮK {TARGET_COUNT} KỲ] Đang có {len(existing)}/{TARGET_COUNT} kỳ trong Supabase")
+    print(f"🚀 [THỪA THIÊN HUẾ {TARGET_COUNT} KỲ] Đang có {len(existing)}/{TARGET_COUNT} kỳ trong Supabase")
     if len(existing) >= TARGET_COUNT:
-        print(f"✅ Đài ĐẮK LẮK ĐÃ ĐỦ {TARGET_COUNT} KỲ!")
+        print(f"✅ Đài THỪA THIÊN HUẾ ĐÃ ĐỦ {TARGET_COUNT} KỲ!")
         return
 
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date()
@@ -323,8 +324,11 @@ def scrape_50_daklak():
     have = len(existing)
     new_saved = 0
 
+    # LỊCH QUAY THỪA THIÊN HUẾ: THỨ 2 (0) VÀ CHỦ NHẬT (6)
+    SCHEDULE_DAYS = (0, 6)
+
     while have < TARGET_COUNT and checked < MAX_LOOKBACK_DRAWS:
-        if curr.weekday() != 1:   # Thứ 3 (1)
+        if curr.weekday() not in SCHEDULE_DAYS:
             curr -= datetime.timedelta(days=1)
             continue
 
@@ -338,11 +342,9 @@ def scrape_50_daklak():
         if db_date in existing:
             continue
 
-        # Đưa URL chữ 'c' dac-lac lên ưu tiên số 1
         candidate_paths = [
-            f"/mien-trung/xo-so-dac-lac/ngay-{d_str}",
-            f"/mien-trung/xo-so-dak-lak/ngay-{d_str}",
-            f"/mien-trung/xo-so-dac-lac?date={d_str}",
+            f"/mien-trung/xo-so-thua-thien-hue/ngay-{d_str}",
+            f"/mien-trung/xo-so-thua-thien-hue?date={d_str}",
             f"/mien-trung?date={d_str}"
         ]
 
@@ -351,7 +353,7 @@ def scrape_50_daklak():
         for path in candidate_paths:
             html = fetch_kqxs_html(path)
             if html and date_in_html(html, d_obj):
-                parsed = parse_daklak(html, db_date)
+                parsed = parse_tthue(html, db_date)
                 if parsed:
                     used_path = path
                     break
@@ -363,11 +365,11 @@ def scrape_50_daklak():
             print(f"  [{have}/{TARGET_COUNT}] Nạp thành công kỳ ngày {db_date} (nguồn: {used_path})")
             time.sleep(0.15)
         elif not parsed:
-            print(f"  ⚠️ Không tìm thấy dữ liệu đài ĐẮK LẮK cho ngày {d_str}")
+            print(f"  ⚠️ Không tìm thấy dữ liệu đài THỪA THIÊN HUẾ cho ngày {d_str}")
 
     final_cnt = len(get_existing_dates())
-    print(f"\n🎉 [HOÀN TẤT] Nạp mới {new_saved} kỳ | ĐẮK LẮK hiện có {final_cnt}/{TARGET_COUNT} kỳ trong Supabase")
+    print(f"\n🎉 [HOÀN TẤT] Nạp mới {new_saved} kỳ | THỪA THIÊN HUẾ hiện có {final_cnt}/{TARGET_COUNT} kỳ trong Supabase")
 
 
 if __name__ == '__main__':
-    scrape_50_daklak()
+    scrape_50_tthue()
