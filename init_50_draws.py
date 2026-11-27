@@ -17,7 +17,7 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
 TARGET_COUNT = 50          # Số kỳ cần nạp cho mỗi đài
-MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 4)
+MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 5)
 TRUNCATE_DIGITS = 3        # Cắt lấy 3D cho các giải >= 3D, Giải 8 (2D) giữ nguyên.
 
 HEADERS_SUPABASE = {
@@ -27,39 +27,72 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates,return=minimal',
 }
 
-# ==================== 2. CẤU HÌNH CÁC ĐÀI MỞ THƯỞNG THỨ 4 ====================
+# ==================== 2. CẤU HÌNH CÁC ĐÀI MỞ THƯỞNG THỨ 5 ====================
 STATION_CONFIGS = {
-    "DONGNAI": {
-        "name": "Đồng Nai",
+    "TAYNINH": {
+        "name": "Tây Ninh",
         "region": "MN",
-        "aliases": ["ĐỒNG NAI", "DONG NAI", "DONGNAI", "ĐỒNGNAI"],
-        "days": (2,),  # Thứ 4 (Mon=0, Tue=1, Wed=2)
+        "aliases": ["TÂY NINH", "TAY NINH", "TAYNINH", "TÂYNINH"],
+        "days": (3,),  # Thứ 5 (Mon=0, Tue=1, Wed=2, Thu=3)
         "paths": lambda d: [
             f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-dong-nai/ngay-{d}",
-            f"/mien-nam/xo-so-dong-nai?date={d}"
+            f"/mien-nam/xo-so-tay-ninh/ngay-{d}",
+            f"/mien-nam/xo-so-tay-ninh?date={d}"
         ]
     },
-    "CANTHO": {
-        "name": "Cần Thơ",
+    "ANGIANG": {
+        "name": "An Giang",
         "region": "MN",
-        "aliases": ["CẦN THƠ", "CAN THO", "CANTHO", "CẦNTHƠ"],
-        "days": (2,),  # Thứ 4
+        "aliases": ["AN GIANG", "AN GIANG", "ANGIANG", "ANGIANG"],
+        "days": (3,),  # Thứ 5
         "paths": lambda d: [
             f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-can-tho/ngay-{d}",
-            f"/mien-nam/xo-so-can-tho?date={d}"
+            f"/mien-nam/xo-so-an-giang/ngay-{d}",
+            f"/mien-nam/xo-so-an-giang?date={d}"
         ]
     },
-    "SOCTRANG": {
-        "name": "Sóc Trăng",
+    "BINHTHUAN": {
+        "name": "Bình Thuận",
         "region": "MN",
-        "aliases": ["SÓC TRĂNG", "SOC TRANG", "SOCTRANG", "SÓCTRĂNG"],
-        "days": (2,),  # Thứ 4
+        "aliases": ["BÌNH THUẬN", "BINH THUAN", "BINHTHUAN", "BÌNHTHUẬN"],
+        "days": (3,),  # Thứ 5
         "paths": lambda d: [
             f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-soc-trang/ngay-{d}",
-            f"/mien-nam/xo-so-soc-trang?date={d}"
+            f"/mien-nam/xo-so-binh-thuan/ngay-{d}",
+            f"/mien-nam/xo-so-binh-thuan?date={d}"
+        ]
+    },
+    "BINHDINH": {
+        "name": "Bình Định",
+        "region": "MT",
+        "aliases": ["BÌNH ĐỊNH", "BINH DINH", "BINHDINH", "BÌNHĐỊNH"],
+        "days": (3,),  # Thứ 5
+        "paths": lambda d: [
+            f"/mien-trung?date={d}",
+            f"/mien-trung/xo-so-binh-dinh/ngay-{d}",
+            f"/mien-trung/xo-so-binh-dinh?date={d}"
+        ]
+    },
+    "QUANGTRI": {
+        "name": "Quảng Trị",
+        "region": "MT",
+        "aliases": ["QUẢNG TRỊ", "QUANG TRI", "QUANGTRI", "QUẢNGTRỊ"],
+        "days": (3,),  # Thứ 5
+        "paths": lambda d: [
+            f"/mien-trung?date={d}",
+            f"/mien-trung/xo-so-quang-tri/ngay-{d}",
+            f"/mien-trung/xo-so-quang-tri?date={d}"
+        ]
+    },
+    "QUANGBINH": {
+        "name": "Quảng Bình",
+        "region": "MT",
+        "aliases": ["QUẢNG BÌNH", "QUANG BINH", "QUANGBINH", "QUẢNGBÌNH"],
+        "days": (3,),  # Thứ 5
+        "paths": lambda d: [
+            f"/mien-trung?date={d}",
+            f"/mien-trung/xo-so-quang-binh/ngay-{d}",
+            f"/mien-trung/xo-so-quang-binh?date={d}"
         ]
     }
 }
@@ -336,7 +369,7 @@ def save_to_supabase(data):
     return False
 
 
-# ==================== 8. CHẠY VÒNG LẶP CHO TỪNG ĐÀI THỨ 4 ====================
+# ==================== 8. CHẠY VÒNG LẶP CHO TỪNG ĐÀI THỨ 5 ====================
 def scrape_50_for_station(station_id):
     cfg = STATION_CONFIGS[station_id]
     name = cfg["name"]
@@ -402,7 +435,7 @@ def scrape_50_for_station(station_id):
 
 
 if __name__ == '__main__':
-    print("🚀 [NẠP 50 KỲ THỨ 4] Bắt đầu chạy nạp cho 3 đài Thứ 4 (Đồng Nai, Cần Thơ, Sóc Trăng)...")
-    for st_id in ["DONGNAI", "CANTHO", "SOCTRANG"]:
+    print("🚀 [NẠP 50 KỲ THỨ 5] Bắt đầu chạy nạp cho 6 đài Thứ 5 (Tây Ninh, An Giang, Bình Thuận, Bình Định, Quảng Trị, Quảng Bình)...")
+    for st_id in ["TAYNINH", "ANGIANG", "BINHTHUAN", "BINHDINH", "QUANGTRI", "QUANGBINH"]:
         scrape_50_for_station(st_id)
-    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI THỨ 4!")
+    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI THỨ 5!")
