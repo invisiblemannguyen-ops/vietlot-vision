@@ -32,7 +32,7 @@ HEADERS_SUPABASE = {
 
 # ==================== 2. LỊCH QUAY THƯỜNG CÁC ĐÀI (T2 -> CN) ====================
 STATION_DB = {
-    # MIỀN NAM (18 GIẢI)
+    # MIỀN NAM (18 GIẢI / ĐÀI)
     "TPHCM":     {"name": "TP.HCM", "region": "MN", "days": (0, 5), "aliases": ["TP.HCM", "TPHCM", "HỒ CHÍ MINH"], "path": "xo-so-tphcm"},
     "DONGTHAP":  {"name": "Đồng Tháp", "region": "MN", "days": (0,), "aliases": ["ĐỒNG THÁP", "DONGTHAP"], "path": "xo-so-dong-thap"},
     "CAMAU":     {"name": "Cà Mau", "region": "MN", "days": (0,), "aliases": ["CÀ MAU", "CAMAU"], "path": "xo-so-ca-mau"},
@@ -55,7 +55,7 @@ STATION_DB = {
     "KIENGIANG": {"name": "Kiên Giang", "region": "MN", "days": (6,), "aliases": ["KIÊN GIANG", "KIENGIANG"], "path": "xo-so-kien-giang"},
     "DALAT":     {"name": "Đà Lạt", "region": "MN", "days": (6,), "aliases": ["ĐÀ LẠT", "DALAT", "LÂM ĐỒNG"], "path": "xo-so-da-lat"},
 
-    # MIỀN TRUNG (18 GIẢI)
+    # MIỀN TRUNG (18 GIẢI / ĐÀI)
     "TTHUE":     {"name": "Thừa Thiên Huế", "region": "MT", "days": (0, 6), "aliases": ["THỪA THIÊN HUẾ", "T.T.HUẾ", "TTHUE", "HUẾ"], "path": "xo-so-thua-thien-hue"},
     "PHUYEN":    {"name": "Phú Yên", "region": "MT", "days": (0,), "aliases": ["PHÚ YÊN", "PHUYEN"], "path": "xo-so-phu-yen"},
     "DAKLAK":    {"name": "Đắc Lắc", "region": "MT", "days": (1,), "aliases": ["ĐẮK LẮK", "ĐẮC LẮC", "DAKLAK", "DAC LAC"], "path": "xo-so-dac-lac"},
@@ -71,17 +71,13 @@ STATION_DB = {
     "DAKNONG":   {"name": "Đắc Nông", "region": "MT", "days": (5,), "aliases": ["ĐẮK NÔNG", "ĐẮC NÔNG", "DAKNONG", "DAC NONG"], "path": "xo-so-dac-nong"},
     "KONTUM":    {"name": "Kon Tum", "region": "MT", "days": (6,), "aliases": ["KON TUM", "KONTUM"], "path": "xo-so-kon-tum"},
 
-    # MIỀN BẮC (27 GIẢI)
-    "MB":        {"name": "Miền Bắc", "region": "MB", "days": (0, 1, 2, 3, 4, 5, 6), "aliases": ["MIỀN BẮC", "MB", "HÀ NỘI", "XSMB", "KQXSMB", "TRUYỀN THỐNG", "TRUYEN THONG", "ĐẠI PHÁT"], "path": "xo-so-mien-bac"}
+    # MIỀN BẮC (27 GIẢI - KHÔNG CÓ GIẢI 8)
+    "MB":        {"name": "Miền Bắc", "region": "MB", "days": (0, 1, 2, 3, 4, 5, 6), "aliases": ["MIỀN BẮC", "MB", "HÀ NỘI"], "path": "mien-bac"}
 }
 
 EXPECTED_COUNT_MN_MT = {'DB': 1, 'G1': 1, 'G2': 1, 'G3': 2, 'G4': 7, 'G5': 1, 'G6': 3, 'G7': 1, 'G8': 1}
 EXPECTED_LEN_MN_MT = {'DB': (5, 6), 'G1': (5,), 'G2': (5,), 'G3': (5,), 'G4': (5,), 'G5': (4,), 'G6': (4, 3), 'G7': (3,), 'G8': (2,)}
 PRIZE_ORDER_MN_MT = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8']
-
-EXPECTED_COUNT_MB = {'DB': 1, 'G1': 1, 'G2': 2, 'G3': 6, 'G4': 4, 'G5': 6, 'G6': 3, 'G7': 4}
-EXPECTED_LEN_MB = {'DB': (5,), 'G1': (5,), 'G2': (5,), 'G3': (5,), 'G4': (4,), 'G5': (4,), 'G6': (3,), 'G7': (2,)}
-PRIZE_ORDER_MB = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']
 
 LABELS = [
     ('DB', ['ĐẶC BIỆT', 'ĐB']),
@@ -107,7 +103,7 @@ def send_error_email(to_email, region, failed_stations, db_date):
     gmail_pass = os.environ.get('GMAIL_APP_PASS')
     
     if not gmail_user or not gmail_pass:
-        print(f"  ℹ️ [THÔNG BÁO] GMAIL_USER/GMAIL_APP_PASS chưa cài trong Secrets. GitHub Actions sẽ phát lệnh báo đỏ (exit 1) để gửi email mặc định của GitHub tới bạn.")
+        print(f"  ℹ️ [THÔNG BÁO] GMAIL_USER/GMAIL_APP_PASS chưa cài trong Secrets. GitHub Actions sẽ phát lệnh exit(1) để báo đỏ.")
         return
 
     subject = f"🚨 [CẢNH BÁO KQXS] Miền {region} ngày {db_date} bị thiếu đài!"
@@ -210,8 +206,10 @@ def fetch_kqxs_html(path_url):
 
 def format_prize_number(raw_str):
     clean = re.sub(r'\D', '', str(raw_str))
-    if TRUNCATE_DIGITS and len(clean) > TRUNCATE_DIGITS:
+    if TRUNCATE_DIGITS and len(clean) >= 3:
         return clean[-TRUNCATE_DIGITS:]
+    elif len(clean) == 2:
+        return clean[-2:]
     return clean
 
 
@@ -268,9 +266,8 @@ def find_station_column(grid, aliases):
     return 1 if max((len(r) for r in grid), default=0) == 2 else None
 
 
-def collect_prizes(grid, is_mb=False, col=1):
+def collect_prizes(grid, col=1):
     prizes = {}
-    expected_len_map = EXPECTED_LEN_MB if is_mb else EXPECTED_LEN_MN_MT
     for r in grid:
         if len(r) <= col:
             continue
@@ -281,40 +278,93 @@ def collect_prizes(grid, is_mb=False, col=1):
         if not key:
             continue
         for n in re.findall(r'\d+', r[col]):
-            if key in expected_len_map:
-                valid_lens = expected_len_map[key] if isinstance(expected_len_map[key], (tuple, list)) else (expected_len_map[key],)
-                if len(n) in valid_lens:
-                    prizes.setdefault(key, []).append(n)
+            valid_lens = EXPECTED_LEN_MN_MT[key] if isinstance(EXPECTED_LEN_MN_MT[key], (tuple, list)) else (EXPECTED_LEN_MN_MT[key],)
+            if len(n) in valid_lens:
+                prizes.setdefault(key, []).append(n)
     return prizes
 
 
-def parse_station_html(html, station_id, aliases, db_date):
+# ==================== PARSER CHUYÊN DỤNG CHO MIỀN BẮC (27 GIẢI - KHÔNG GIẢI 8) ====================
+def parse_mb(html, db_date):
     if not html:
         return None
-    is_mb = (station_id == "MB")
-    exp_count = EXPECTED_COUNT_MB if is_mb else EXPECTED_COUNT_MN_MT
-    prize_order = PRIZE_ORDER_MB if is_mb else PRIZE_ORDER_MN_MT
+    soup = BeautifulSoup(html, 'html.parser')
+    tables = soup.find_all('table')
+    box_table = None
+    for t in tables:
+        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1', re.I)):
+            box_table = t
+            break
+    if not box_table:
+        return None
 
+    raw_prizes = []
+    special_prize = ""
+    g7_list = []
+
+    for tr in box_table.find_all('tr'):
+        tds = tr.find_all(['td', 'th'])
+        if len(tds) >= 2:
+            label = tds[0].get_text(separator=' ').strip().upper()
+            if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO']):
+                continue
+
+            nums_raw = []
+            for td in tds[1:]:
+                nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
+
+            formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
+            if not formatted_nums:
+                continue
+
+            if re.search(r'ĐB|ĐẶC BIỆT', label):
+                if formatted_nums:
+                    special_prize = formatted_nums[0]
+            elif re.search(r'G7|GIẢI 7', label):
+                g7_list.extend(formatted_nums)
+
+            raw_prizes.extend(formatted_nums)
+
+    if not raw_prizes or len(raw_prizes) < 27:
+        return None
+
+    return {
+        "station_id": "MB",
+        "draw_date": db_date,
+        "special_prize": special_prize,
+        "seventh_or_eighth": g7_list,
+        "raw_prizes": raw_prizes[:27]
+    }
+
+
+# ==================== PARSER CHO MIỀN NAM VÀ MIỀN TRUNG (18 GIẢI) ====================
+def parse_mn_mt(html, station_id, aliases, db_date):
+    if not html:
+        return None
     soup = BeautifulSoup(html, 'html.parser')
     for t in soup.find_all('table'):
         grid = expand_table(t)
         col = find_station_column(grid, aliases)
         if col is not None:
-            prizes = collect_prizes(grid, is_mb=is_mb, col=col)
-            for key, cnt in exp_count.items():
+            prizes = collect_prizes(grid, col)
+            for key, cnt in EXPECTED_COUNT_MN_MT.items():
                 if len(prizes.get(key, [])) != cnt:
                     return None
-            raw_prizes = [format_prize_number(n) for key in prize_order for n in prizes[key]]
-            sp_val = format_prize_number(prizes['DB'][0]) if prizes.get('DB') else ""
-            g8_val = [format_prize_number(n) for n in prizes['G7']] if is_mb else [format_prize_number(n) for n in prizes['G8']]
+            raw_prizes = [format_prize_number(n) for key in PRIZE_ORDER_MN_MT for n in prizes[key]]
             return {
                 "station_id": station_id,
                 "draw_date": db_date,
-                "special_prize": sp_val,
-                "seventh_or_eighth": g8_val,
+                "special_prize": format_prize_number(prizes['DB']),
+                "seventh_or_eighth": [format_prize_number(n) for n in prizes['G8']],
                 "raw_prizes": raw_prizes,
             }
     return None
+
+
+def parse_station_html(html, station_id, aliases, db_date):
+    if station_id == "MB":
+        return parse_mb(html, db_date)
+    return parse_mn_mt(html, station_id, aliases, db_date)
 
 
 def save_to_supabase(data):
@@ -335,7 +385,7 @@ def save_to_supabase(data):
     try:
         resp = requests.post(f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date", json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {data['station_id']} | Ngày: {data['draw_date']} | ĐB: '{data['special_prize']}'")
+            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {data['station_id']} | Ngày: {data['draw_date']} | ĐB: '{data['special_prize']}' | Số giải: {len(raw_prizes)}")
             return True
     except Exception as e:
         print(f"  ❌ [LỖI LƯU SUPABASE] {e}")
