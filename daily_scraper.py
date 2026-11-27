@@ -15,7 +15,7 @@ try:
 except Exception:
     cffi_requests = None
 
-# ==================== 1. CẤU HÌNH SUPABASE & CƠ BẢN ====================
+# ==================== 1. CẤU HÌNH SUPABASE & EMAIL ====================
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 NOTIFY_EMAIL = "invisibleman.nguyen@gmail.com"
@@ -72,7 +72,7 @@ STATION_DB = {
     "KONTUM":    {"name": "Kon Tum", "region": "MT", "days": (6,), "aliases": ["KON TUM", "KONTUM"], "path": "xo-so-kon-tum"},
 
     # MIỀN BẮC (27 GIẢI)
-    "MB":        {"name": "Miền Bắc", "region": "MB", "days": (0, 1, 2, 3, 4, 5, 6), "aliases": ["MIỀN BẮC", "MB", "HÀ NỘI"], "path": "xo-so-mien-bac"}
+    "MB":        {"name": "Miền Bắc", "region": "MB", "days": (0, 1, 2, 3, 4, 5, 6), "aliases": ["MIỀN BẮC", "MB", "HÀ NỘI", "XSMB", "KQXSMB", "TRUYỀN THỐNG", "TRUYEN THONG", "ĐẠI PHÁT"], "path": "xo-so-mien-bac"}
 }
 
 EXPECTED_COUNT_MN_MT = {'DB': 1, 'G1': 1, 'G2': 1, 'G3': 2, 'G4': 7, 'G5': 1, 'G6': 3, 'G7': 1, 'G8': 1}
@@ -102,20 +102,21 @@ def norm(text):
 
 
 def send_error_email(to_email, region, failed_stations, db_date):
+    """Chỉ gửi email khi LẦN 3 THẤT BẠI."""
     gmail_user = os.environ.get('GMAIL_USER')
     gmail_pass = os.environ.get('GMAIL_APP_PASS')
     
     if not gmail_user or not gmail_pass:
-        print(f"  ℹ️ GMAIL_USER/GMAIL_APP_PASS chưa cài trong Secrets. GitHub Actions sẽ tự gửi email báo lỗi mặc định tới tài khoản của bạn.")
+        print(f"  ℹ️ [THÔNG BÁO] GMAIL_USER/GMAIL_APP_PASS chưa cài trong Secrets. GitHub Actions sẽ phát lệnh báo đỏ (exit 1) để gửi email mặc định của GitHub tới bạn.")
         return
 
-    subject = f"🚨 [CẢNH BÁO CÀO KQXS] Miền {region} ngày {db_date} bị thiếu đài!"
-    body = f"""Chương trình cào KQXS đã chạy 3 lần (cách nhau 5 phút) nhưng KHÔNG THỂ cào đủ kết quả cho Miền {region} ngày {db_date}.
+    subject = f"🚨 [CẢNH BÁO KQXS] Miền {region} ngày {db_date} bị thiếu đài!"
+    body = f"""Hệ thống đã cào 3 lần (cách nhau 5 phút) nhưng KHÔNG THỂ lấy đủ dữ liệu Miền {region} ngày {db_date}.
 
-Các đài bị lỗi/chưa có kết quả:
+Danh sách đài thất bại:
 - {', '.join(failed_stations)}
 
-Vui lòng kiểm tra lại trang web nguồn (kqxs.vn) hoặc log chạy trên GitHub Actions!
+Vui lòng kiểm tra lại nguồn kqxs.vn hoặc log trên GitHub Actions!
 """
     msg = MIMEText(body, 'plain', 'utf-8')
     msg['Subject'] = subject
@@ -127,7 +128,7 @@ Vui lòng kiểm tra lại trang web nguồn (kqxs.vn) hoặc log chạy trên G
         server.login(gmail_user, gmail_pass)
         server.sendmail(gmail_user, [to_email], msg.as_string())
         server.close()
-        print(f"  ✉️ Đã gửi email thông báo sự cố thành công tới {to_email}!")
+        print(f"  ✉️ Đã gửi email thông báo thất bại lần 3 tới {to_email}!")
     except Exception as e:
         print(f"  ⚠️ Lỗi gửi email SMTP: {e}")
 
@@ -304,11 +305,12 @@ def parse_station_html(html, station_id, aliases, db_date):
                 if len(prizes.get(key, [])) != cnt:
                     return None
             raw_prizes = [format_prize_number(n) for key in prize_order for n in prizes[key]]
+            sp_val = format_prize_number(prizes['DB'][0]) if prizes.get('DB') else ""
             g8_val = [format_prize_number(n) for n in prizes['G7']] if is_mb else [format_prize_number(n) for n in prizes['G8']]
             return {
                 "station_id": station_id,
                 "draw_date": db_date,
-                "special_prize": format_prize_number(prizes['DB']),
+                "special_prize": sp_val,
                 "seventh_or_eighth": g8_val,
                 "raw_prizes": raw_prizes,
             }
@@ -340,6 +342,26 @@ def save_to_supabase(data):
     return False
 
 
+def get_candidate_paths(st_id, cfg, d_str):
+    region = cfg["region"]
+    path_slug = cfg["path"]
+    if st_id == "MB":
+        return [
+            f"/mien-bac/ngay-{d_str}",
+            f"/xo-so-mien-bac/ngay-{d_str}",
+            f"/mien-bac?date={d_str}",
+            f"/mien-bac"
+        ]
+    
+    region_dir = "mien-nam" if region == "MN" else "mien-trung"
+    return [
+        f"/{region_dir}/{path_slug}/ngay-{d_str}",
+        f"/{path_slug}/ngay-{d_str}",
+        f"/{region_dir}/{path_slug}?date={d_str}",
+        f"/{region_dir}?date={d_str}"
+    ]
+
+
 def scrape_today(target_region=None):
     vn_tz = datetime.timezone(datetime.timedelta(hours=7))
     today_obj = datetime.datetime.now(vn_tz).date()
@@ -349,7 +371,6 @@ def scrape_today(target_region=None):
 
     print(f"🚀 [CÀO HÀNG NGÀY] Ngày {d_str} (Thứ {weekday + 2 if weekday < 6 else 'CN'})")
 
-    # Lọc danh sách đài mở thưởng hôm nay cho vùng chỉ định
     today_stations = []
     for st_id, cfg in STATION_DB.items():
         if target_region and cfg["region"] != target_region.upper():
@@ -372,44 +393,48 @@ def scrape_today(target_region=None):
             if st_id in completed_stations:
                 continue
 
-            # Kiểm tra xem đài đã có trên Supabase chưa
             if get_existing_date_for_station(st_id, db_date):
                 print(f"  ✅ Đài {cfg['name']} ({st_id}) ĐÃ CÓ DỮ LIỆU ngày {db_date}")
                 completed_stations.add(st_id)
                 continue
 
-            name, region, aliases, path_slug = cfg["name"], cfg["region"], cfg["aliases"], cfg["path"]
+            name, region, aliases = cfg["name"], cfg["region"], cfg["aliases"]
             print(f"📌 Đang cào đài: {name} ({st_id}) - Miền {region}")
             ensure_station_exists(st_id, name, region)
 
-            path_url = f"/{'mien-nam' if region=='MN' else ('mien-trung' if region=='MT' else 'mien-bac')}/{path_slug}/ngay-{d_str}"
-            html = fetch_kqxs_html(path_url)
-            if not html:
-                alt_url = f"/{'mien-nam' if region=='MN' else ('mien-trung' if region=='MT' else 'mien-bac')}?date={d_str}"
-                html = fetch_kqxs_html(alt_url)
+            candidate_paths = get_candidate_paths(st_id, cfg, d_str)
+            parsed = None
+            used_path = ""
 
-            parsed = parse_station_html(html, st_id, aliases, db_date)
+            for path_url in candidate_paths:
+                html = fetch_kqxs_html(path_url)
+                if html:
+                    parsed = parse_station_html(html, st_id, aliases, db_date)
+                    if parsed:
+                        used_path = path_url
+                        break
+
             if parsed and save_to_supabase(parsed):
                 cleanup_old_records(st_id)
                 completed_stations.add(st_id)
+                print(f"  ✅ Cào thành công đài {name} từ URL: {used_path}")
             else:
                 print(f"  ⚠️ Chưa lấy được KQXS đài {name} ngày {d_str}")
 
-        # Nếu đã đủ 100% đài -> Hoàn tất & Thoát sớm
         if len(completed_stations) == len(today_stations):
             print(f"\n🎉 [THÀNH CÔNG RỰC RỠ] Đã cào đủ {len(completed_stations)}/{len(today_stations)} đài cho Miền {target_region}!")
             return
 
-        # Nếu chưa đủ và còn lượt thử -> Tạm dừng 5 phút (300 giây) rồi thử lại
+        # 2 LẦN ĐẦU CHƯA XONG: CHỈ CHỜ 5 PHÚT, KHÔNG BÁO LỖI HAY GỬI MAIL
         if attempt < 3:
             missing_names = [cfg['name'] for st_id, cfg in today_stations if st_id not in completed_stations]
-            print(f"\n⏳ Miền {target_region} còn thiếu {len(missing_names)} đài: {', '.join(missing_names)}")
-            print(f"💤 Đang tạm dừng 5 phút (300 giây) trước khi thử lại Lần {attempt + 1}...")
+            print(f"\n⏳ Lần {attempt} chưa xong: Còn thiếu {len(missing_names)} đài ({', '.join(missing_names)}).")
+            print(f"💤 Tạm dừng 5 phút (300 giây) rồi thử lại Lần {attempt + 1}...")
             time.sleep(300)
 
-    # NẾU SAU 3 LẦN VẪN THIẾU ĐÀI -> GỬI EMAIL BÁO LỖI VÀ THOÁT VỚI EXIT(1)
+    # NẾU SAU LẦN 3 VẪN THIẾU ĐÀI -> MỚI BÁO LỖI VÀ GỬI EMAIL THÔNG BÁO
     failed_names = [cfg['name'] for st_id, cfg in today_stations if st_id not in completed_stations]
-    print(f"\n💥 [LỖI NGHIÊM TRỌNG] Sau 3 lần cào (cách nhau 5 phút), Miền {target_region} vẫn thiếu {len(failed_names)} đài: {', '.join(failed_names)}")
+    print(f"\n💥 [LỖI LẦN 3 CUỐI CÙNG] Đã cào 3 lần nhưng Miền {target_region} vẫn thiếu {len(failed_names)} đài: {', '.join(failed_names)}")
     send_error_email(NOTIFY_EMAIL, target_region, failed_names, db_date)
     sys.exit(1)
 
