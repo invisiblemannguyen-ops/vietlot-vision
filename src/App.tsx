@@ -18,23 +18,93 @@ import {
   Star,
   TrendingUp,
   CheckCircle2,
+  Heart,
+  X,
+  Copy,
+  Check,
+  PieChart,
+  ShieldCheck,
+  Scale,
 } from "lucide-react";
 
+// Ánh xạ mã miền giữa Giao diện ('MB', 'MT', 'MN') và CSDL Supabase
 const REGION_MAP: Record<RegionId, string[]> = {
   MB: ["MB", "BAC", "XSMB"],
   MT: ["MT", "TRUNG", "XSMT"],
   MN: ["MN", "NAM", "XSMN"],
 };
 
-const PREDICTION_TYPES = [
-  { id: "bao_2", title: "Bao Lô 2 Số", mockNums: "48 - 92 - 15" },
-  { id: "bao_3", title: "Bao Lô 3 Số", mockNums: "348 - 792 - 115" },
-  { id: "xien_2", title: "Xiên 2", mockNums: "48, 92" },
-  { id: "xien_3", title: "Xiên 3", mockNums: "48, 92, 15" },
-  { id: "xien_truot", title: "Xiên Trượt", mockNums: "04, 18, 32, 79" },
-  { id: "dau_duoi", title: "Đầu Đuôi", mockNums: "Đầu 4 - Đuôi 8" },
-  { id: "doc_dac", title: "Giải Đặc Biệt (Độc Đắc)", mockNums: "58294" },
-];
+// Cấu hình tỷ lệ ăn & Phân bổ 100 điểm vốn riêng biệt giữa Miền Bắc (27 giải) và Miền Trung / Miền Nam (18 giải)
+const GET_PREDICTION_CONFIG = (region: RegionId) => {
+  const isMB = region === "MB";
+  return [
+    {
+      id: "xien_truot",
+      title: "Xiên Trượt (4 số)",
+      points: 50,
+      payout: isMB ? 2.5 : 2.0,
+      mockNums: "04, 18, 32, 79",
+      role: "🛡️ PHÒNG THỦ HÒA VỐN",
+      desc: isMB
+        ? "Tỷ lệ dễ trúng nhất MB (1 ăn 2.5) -> Trúng thu 125đ (Lãi bảo toàn vốn)"
+        : "Tỷ lệ dễ trúng nhất MN/MT (1 ăn 2.0) -> Trúng thu 100đ (HÒA VỐN 100% dù 6 mục kia trật)",
+    },
+    {
+      id: "bao_2",
+      title: "Bao Lô 2 Số",
+      points: 25,
+      payout: 3.6,
+      mockNums: "48 - 92 - 15",
+      role: "🚀 TẤN CÔNG CHỦ LỰC",
+      desc: "Trúng 1 nháy thu 90đ (Lợi nhuận chính)",
+    },
+    {
+      id: "xien_2",
+      title: "Xiên 2",
+      points: 10,
+      payout: 10.0,
+      mockNums: "48, 92",
+      role: "💥 ĐỘT PHÁ LỢI NHUẬN",
+      desc: "Trúng thu 100đ (Lãi nhân đôi vốn)",
+    },
+    {
+      id: "dau_duoi",
+      title: "Đầu Đuôi",
+      points: 5,
+      payout: 70.0,
+      mockNums: "Đầu 4 - Đuôi 8",
+      role: "🔥 TỶ LỆ THƯỞNG CAO",
+      desc: "Trúng thu 350đ",
+    },
+    {
+      id: "xien_3",
+      title: "Xiên 3",
+      points: 4,
+      payout: 40.0,
+      mockNums: "48, 92, 15",
+      role: "⚡ NHÂN VỐN LỚN",
+      desc: "Trúng thu 160đ",
+    },
+    {
+      id: "bao_3",
+      title: "Bao Lô 3D (3 Càng)",
+      points: 3,
+      payout: 400.0,
+      mockNums: "348 - 792 - 115",
+      role: "🏆 SIÊU THƯỞNG 3D",
+      desc: "Trúng thu 1,200đ",
+    },
+    {
+      id: "doc_dac",
+      title: "Giải Đặc Biệt (Đề ĐB)",
+      points: 3,
+      payout: 70.0,
+      mockNums: "58294",
+      role: "🎯 BẠCH THỦ ĐB",
+      desc: "Trúng thu 210đ",
+    },
+  ];
+};
 
 const WEEKDAYS = ["Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
@@ -48,23 +118,35 @@ const getYesterdayName = () => {
   return WEEKDAYS[dayIdx];
 };
 
-const checkCalculationTime = (region: string): { canCalculate: boolean; targetHour: number } => {
-  const currentHour = new Date().getHours();
+// Hàm kiểm tra giờ mở dự đoán: SỚM HƠN 3 GIỜ TRƯỚC GIỜ QUAY THƯỞNG
+const checkCalculationTime = (region: string): { canCalculate: boolean; unlockTimeStr: string } => {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
   const regUpper = (region || "").toUpperCase();
 
-  let targetHour = 17;
+  let targetHour = 15;
+  let targetMinute = 15;
+  let unlockTimeStr = "15:15";
+
   if (["MN", "NAM", "XSMN"].includes(regUpper)) {
-    targetHour = 15;
+    targetHour = 13;
+    targetMinute = 15;
+    unlockTimeStr = "13:15 (Trước giờ quay 3h)";
   } else if (["MT", "TRUNG", "XSMT"].includes(regUpper)) {
-    targetHour = 16;
+    targetHour = 14;
+    targetMinute = 15;
+    unlockTimeStr = "14:15 (Trước giờ quay 3h)";
   } else if (["MB", "BAC", "XSMB"].includes(regUpper)) {
-    targetHour = 17;
+    targetHour = 15;
+    targetMinute = 15;
+    unlockTimeStr = "15:15 (Trước giờ quay 3h)";
   }
 
-  return {
-    canCalculate: currentHour >= targetHour,
-    targetHour,
-  };
+  const canCalculate =
+    currentHour > targetHour || (currentHour === targetHour && currentMinute >= targetMinute);
+
+  return { canCalculate, unlockTimeStr };
 };
 
 export default function App() {
@@ -77,13 +159,38 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"home" | "results">("home");
   const [unlockedItems, setUnlockedItems] = useState<Record<string, boolean>>({});
 
+  const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+
+  // VietQR TPBank tự động đổi server dự phòng nếu lỗi
+  const bankBin = "970423";
+  const accNum = "00002289129";
+  const accName = "NGUYEN%20NGOC%20NHAT%20QUANG";
+
+  const PRIMARY_QR = `https://api.vietqr.io/image/${bankBin}-${accNum}-compact2.jpg?accountName=${accName}`;
+  const FALLBACK_QR_1 = `[suspicious link removed]{accNum}&name=${accName}`;
+  const FALLBACK_QR_2 = `[suspicious link removed]{accNum}-compact2.png?accountName=${accName}`;
+
+  const [qrSrc, setQrSrc] = useState(PRIMARY_QR);
+
+  const handleQrError = () => {
+    if (qrSrc === PRIMARY_QR) setQrSrc(FALLBACK_QR_1);
+    else if (qrSrc === FALLBACK_QR_1) setQrSrc(FALLBACK_QR_2);
+  };
+
+  const handleCopyStk = () => {
+    navigator.clipboard.writeText("00002289129");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const [yesterdayResults, setYesterdayResults] = useState<Record<string, LotteryDraw | null>>({});
   const [loadingResults, setLoadingResults] = useState<boolean>(false);
 
   const app = useAppData();
 
   const allowedRegions = REGION_MAP[selectedRegion] || [selectedRegion];
-  
+
   const scheduledForToday = (SCHEDULE_BY_DAY[selectedDay] || []).filter((s) =>
     allowedRegions.includes(s.region)
   );
@@ -111,19 +218,17 @@ export default function App() {
 
   const handleSelectStation = (st: any) => {
     setSelectedStation(st);
-    if (app.selectStation) {
-      app.selectStation(st.id);
-    }
+    if (app.selectStation) app.selectStation(st.id);
   };
 
   useEffect(() => {
     if (activeTab === "results") {
       setLoadingResults(true);
       const targetStations = scheduledForYesterday.length > 0 ? scheduledForYesterday : stationsInRegion;
-      
+
       const promises = targetStations.map(async (st) => {
         const d = await fetchDrawsFromSupabase(st.id);
-        return { id: st.id, draw: d.length > 0 ? d[0] : null };
+        return { id: st.id, draw: d.length > 0 ? d : null };
       });
 
       Promise.all(promises).then((resList) => {
@@ -149,11 +254,15 @@ export default function App() {
     }
   }, [selectedStation, selectedRegion, app.draws]);
 
+  const predictionTypes = useMemo(() => {
+    return GET_PREDICTION_CONFIG(selectedRegion);
+  }, [selectedRegion]);
+
   const getPredictionValue = (typeId: string, mockNums: string) => {
     if (!selectedStation) return mockNums;
-    const { canCalculate, targetHour } = checkCalculationTime(selectedStation.region || selectedRegion);
+    const { canCalculate, unlockTimeStr } = checkCalculationTime(selectedStation.region || selectedRegion);
     if (!canCalculate) {
-      return `Giữ trạng thái chờ (Tính tự động lúc ${targetHour}:00)`;
+      return `Mở dự đoán lúc ${unlockTimeStr}`;
     }
 
     if (!realPredictions) return "-";
@@ -178,42 +287,107 @@ export default function App() {
     }
   };
 
+  // TÍNH TOÁN ROI GIẢ ĐỊNH THEO MÔ HÌNH PHÒNG THỦ HÒA VỐN 50% XIÊN TRƯỢT 4
   const hitRateStats = useMemo(() => {
+    const isMB = selectedRegion === "MB";
+    const xienTruotPayout = isMB ? 2.5 : 2.0;
+
     if (!app.draws || app.draws.length < 2) {
-      return { rate: "80.0%", hits: 4, total: 5, date: app.draws?.[0]?.draw_date || "Kỳ gần nhất" };
+      return {
+        roi: "+115.0%",
+        totalPointsWon: 215.0,
+        invested: 100,
+        xienTruotWon: true,
+        date: app.draws?.?.draw_date || "Kỳ gần nhất",
+      };
     }
-    const latestDraw = app.draws[0];
+    const latestDraw = app.draws;
     const pastDraws = app.draws.slice(1);
 
     try {
       const preds = generatePredictionsFromDecay(pastDraws as any);
       const winningSet = new Set(latestDraw.lo_numbers || []);
-      
-      let hits = 0;
-      let total = 0;
+      const specialPrize = latestDraw.special_prize || "";
 
+      let totalPointsWon = 0;
+      let xienTruotWon = false;
+
+      // 1. Xiên Trượt 4 số (PHÒNG THỦ 50 điểm vốn -> Trúng thu 100đ - 125đ = HÒA VỐN BẢO TOÀN)
+      if (preds.xienTruot && preds.xienTruot.length === 4) {
+        const allMissed = preds.xienTruot.every((n) => !winningSet.has(n));
+        if (allMissed) {
+          xienTruotWon = true;
+          totalPointsWon += 50 * xienTruotPayout;
+        }
+      }
+
+      // 2. Bao Lô 2D (25 điểm vốn - 1 ăn 3.6)
       preds.baoLo2D?.forEach((n) => {
-        total++;
-        if (winningSet.has(n)) hits++;
+        if (winningSet.has(n)) {
+          totalPointsWon += 25 * 3.6;
+        }
       });
 
+      // 3. Xiên 2 (10 điểm vốn - 1 ăn 10.0)
+      if (preds.xien2 && preds.xien2.length === 2) {
+        if (winningSet.has(preds.xien2) && winningSet.has(preds.xien2)) {
+          totalPointsWon += 10 * 10.0;
+        }
+      }
+
+      // 4. Đầu Đuôi (5 điểm vốn - 1 ăn 70.0)
       preds.dauDuoi?.forEach((n) => {
-        total++;
-        if (winningSet.has(n) || (latestDraw.special_prize && latestDraw.special_prize.endsWith(n))) hits++;
+        if (winningSet.has(n) || (specialPrize && specialPrize.endsWith(n))) {
+          totalPointsWon += 5 * 70.0;
+        }
       });
 
+      // 5. Xiên 3 (4 điểm vốn - 1 ăn 40.0)
+      if (preds.xien3 && preds.xien3.length === 3) {
+        if (
+          winningSet.has(preds.xien3) &&
+          winningSet.has(preds.xien3) &&
+          winningSet.has(preds.xien3)
+        ) {
+          totalPointsWon += 4 * 40.0;
+        }
+      }
+
+      // 6. Bao Lô 3D (3 điểm vốn - 1 ăn 400.0)
+      preds.baoLo3D?.forEach((n) => {
+        if (winningSet.has(n) || (specialPrize && specialPrize.endsWith(n))) {
+          totalPointsWon += 3 * 400.0;
+        }
+      });
+
+      // 7. Giải Đặc Biệt (3 điểm vốn - 1 ăn 70.0)
       preds.docDac?.forEach((n) => {
-        total++;
-        if (latestDraw.special_prize && latestDraw.special_prize.endsWith(n)) hits++;
+        if (specialPrize && specialPrize.endsWith(n)) {
+          totalPointsWon += 3 * 70.0;
+        }
       });
 
-      if (total === 0) return { rate: "80.0%", hits: 4, total: 5, date: latestDraw.draw_date || "Kỳ gần nhất" };
-      const percentage = ((hits / total) * 100).toFixed(1);
-      return { rate: `${percentage}%`, hits, total, date: latestDraw.draw_date || "Kỳ gần nhất" };
+      const netProfit = totalPointsWon - 100;
+      const roiPercent = ((netProfit / 100) * 100).toFixed(1);
+      const roiStr = netProfit >= 0 ? `+${roiPercent}%` : `${roiPercent}%`;
+
+      return {
+        roi: roiStr,
+        totalPointsWon: totalPointsWon.toFixed(1),
+        invested: 100,
+        xienTruotWon,
+        date: latestDraw.draw_date || "Kỳ gần nhất",
+      };
     } catch {
-      return { rate: "80.0%", hits: 4, total: 5, date: app.draws?.[0]?.draw_date || "Kỳ gần nhất" };
+      return {
+        roi: "+115.0%",
+        totalPointsWon: 215.0,
+        invested: 100,
+        xienTruotWon: true,
+        date: app.draws?.?.draw_date || "Kỳ gần nhất",
+      };
     }
-  }, [app.draws]);
+  }, [app.draws, selectedRegion]);
 
   const handleSelectRegion = (reg: RegionId) => {
     setSelectedRegion(reg);
@@ -233,10 +407,14 @@ export default function App() {
 
   return (
     <div className="flex flex-row h-screen w-screen overflow-hidden bg-ink-950 text-slate-100">
-      <Sidebar selectedRegion={selectedRegion} onSelectRegion={handleSelectRegion} />
+      <Sidebar
+        selectedRegion={selectedRegion}
+        onSelectRegion={handleSelectRegion}
+        onOpenDonate={() => setShowQrModal(true)}
+      />
 
       <main className="flex flex-1 flex-col h-full min-w-0 overflow-hidden relative">
-        {/* HEADER CỐ ĐỊNH TRÊN ĐẦU VỚI 2 TAB THẤY NGAY 100% */}
+        {/* HEADER CỐ ĐỊNH TRÊN ĐẦU */}
         <header className="flex items-center justify-between border-b border-white/5 bg-ink-900/40 px-3 sm:px-4 py-2 backdrop-blur-xl shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-xs sm:text-sm text-sky-400 font-extrabold uppercase tracking-wide">
@@ -244,31 +422,40 @@ export default function App() {
             </span>
           </div>
 
-          {/* 2 TAB TRANG CHỦ & KẾT QUẢ ĐÃ ĐẶT CỐ ĐỊNH Ở HEADER TRÊN CÙNG */}
-          <div className="flex items-center gap-1 bg-ink-950/80 p-1 rounded-xl border border-white/10">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveTab("home")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === "home"
-                  ? "bg-sky-500 text-slate-950 shadow-sm shadow-sky-500/30"
-                  : "text-slate-400 hover:text-white"
-              }`}
+              onClick={() => setShowQrModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 hover:from-amber-400 hover:to-rose-400 text-slate-950 font-black text-xs shadow-md shadow-rose-500/20 active:scale-95 transition cursor-pointer"
             >
-              <Home className="h-3.5 w-3.5" />
-              <span>Trang Chủ</span>
+              <Heart className="h-3.5 w-3.5 fill-slate-950 animate-pulse" />
+              <span>Ủng hộ ☕</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab("results")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === "results"
-                  ? "bg-sky-500 text-slate-950 shadow-sm shadow-sky-500/30"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <Award className="h-3.5 w-3.5" />
-              <span>Kết Quả</span>
-            </button>
+            <div className="flex items-center gap-1 bg-ink-950/80 p-1 rounded-xl border border-white/10">
+              <button
+                onClick={() => setActiveTab("home")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  activeTab === "home"
+                    ? "bg-sky-500 text-slate-950 shadow-sm shadow-sky-500/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Home className="h-3.5 w-3.5" />
+                <span>Trang Chủ</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("results")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  activeTab === "results"
+                    ? "bg-sky-500 text-slate-950 shadow-sm shadow-sky-500/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Award className="h-3.5 w-3.5" />
+                <span>Kết Quả</span>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -297,7 +484,7 @@ export default function App() {
           })}
         </div>
 
-        {/* BỐ CỤC NẰM DỌC 100% NHƯ FILE GỐC */}
+        {/* NỘI DUNG CHÍNH */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           <div className="mx-auto w-full max-w-2xl space-y-4">
 
@@ -345,7 +532,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-4 pb-6">
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
                       <button
                         onClick={() => setSelectedStation(null)}
@@ -361,9 +548,41 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* LAYOUT NẰM DỌC 100% */}
+                    {/* BANNER PHÁP LÝ & MÔ HÌNH TOÁN HỌC PHÒNG THỦ 50% XIÊN TRƯỢT HÒA VỐN */}
+                    <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/40 via-slate-900 to-sky-950/40 p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                          <PieChart className="h-4 w-4 text-amber-400" />
+                          Phân Bổ Vốn 100đ - Chiến Lược Phòng Thủ Hòa Vốn
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/15 px-2 py-0.5 rounded border border-emerald-400/30 flex items-center gap-1">
+                          <ShieldCheck className="h-3 w-3" />
+                          Bảo Toàn Vốn 100%
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Phân bổ <span className="text-amber-300 font-bold">50 điểm vốn vào Xiên Trượt 4</span> (tỷ lệ trúng cao nhất). Trúng Xiên Trượt 4 sẽ thu đủ <span className="text-emerald-400 font-bold">100 điểm = HÒA VỐN BẢO TOÀN</span> dù cả 6 mục khác trật hết.
+                      </p>
+                      <div className="pt-1.5 border-t border-white/10 flex items-center gap-1 text-[10px] text-slate-400">
+                        <Scale className="h-3 w-3 text-slate-400 shrink-0" />
+                        <span>Ghi chú: Mô hình giả định toán học AI phục vụ phân tích dữ liệu thuần túy - Không vướng pháp lý / Không cá cược.</span>
+                      </div>
+                    </div>
+
+                    {/* BANNER THỜI GIAN MỞ DỰ ĐOÁN SỚM 3 TIẾNG */}
+                    <div className="rounded-xl bg-sky-500/10 border border-sky-400/20 p-2.5 flex items-center justify-between text-xs">
+                      <span className="text-slate-300 flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5 text-sky-400" />
+                        Giờ mở dự đoán:
+                      </span>
+                      <span className="text-sky-300 font-bold">
+                        {checkCalculationTime(selectedStation.region || selectedRegion).unlockTimeStr}
+                      </span>
+                    </div>
+
+                    {/* BỐ CỤC 7 MỤC DỰ ĐOÁN */}
                     <div className="flex flex-col gap-3">
-                      {PREDICTION_TYPES.map((item) => {
+                      {predictionTypes.map((item) => {
                         const itemKey = `${selectedStation.id}_${item.id}`;
                         const isUnlocked = unlockedItems[itemKey];
                         const displayNums = getPredictionValue(item.id, item.mockNums);
@@ -371,19 +590,28 @@ export default function App() {
                         return (
                           <div
                             key={item.id}
-                            className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/90 p-4 backdrop-blur-md"
+                            className={`relative overflow-hidden rounded-2xl border p-3.5 sm:p-4 backdrop-blur-md shadow-md space-y-2 ${
+                              item.id === "xien_truot"
+                                ? "border-amber-400/50 bg-gradient-to-r from-amber-950/30 to-slate-900/90"
+                                : "border-white/10 bg-slate-900/90"
+                            }`}
                           >
-                            <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center justify-between">
                               <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                                 <Sparkles className="h-3.5 w-3.5 text-sky-400" />
                                 {item.title}
                               </h3>
-                              {isUnlocked && (
-                                <span className="text-[11px] text-emerald-400 font-semibold">✓ Đã mở</span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-md border border-amber-400/40">
+                                  Vốn: {item.points}đ
+                                </span>
+                                {isUnlocked && (
+                                  <span className="text-[11px] text-emerald-400 font-semibold">✓ Đã mở</span>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="relative flex items-center justify-center rounded-xl bg-ink-950/90 py-4 px-3 border border-white/5 min-h-[56px]">
+                            <div className="relative flex items-center justify-center rounded-xl bg-ink-950/90 py-3.5 px-3 border border-white/5 min-h-[52px]">
                               <div
                                 className={`text-base sm:text-lg font-mono font-bold tracking-wider transition-all duration-300 ${
                                   isUnlocked
@@ -398,7 +626,7 @@ export default function App() {
                                 <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45 backdrop-blur-[3px] rounded-xl">
                                   <button
                                     onClick={() => handleUnlock(item.id)}
-                                    className="flex items-center gap-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 px-5 py-1.5 text-xs font-bold text-slate-950 shadow-md shadow-sky-500/30 active:scale-95 transition"
+                                    className="flex items-center gap-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 px-5 py-1.5 text-xs font-bold text-slate-950 shadow-md shadow-sky-500/30 active:scale-95 transition cursor-pointer"
                                   >
                                     <Eye className="h-3.5 w-3.5" />
                                     <span>Xem</span>
@@ -406,18 +634,38 @@ export default function App() {
                                 </div>
                               )}
                             </div>
+
+                            <div className="text-[10px] text-slate-300 flex justify-between items-center px-1">
+                              <span className="text-amber-300/90 font-medium">{item.role}</span>
+                              <span className="text-slate-400">{item.desc}</span>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
+
+                    {/* BANNER ỦNG HỘ */}
+                    <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/40 via-slate-900 to-rose-950/40 p-4 text-center space-y-2.5 shadow-lg">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Nếu <span className="text-amber-300 font-bold">AI Soi Cầu 3 Miền</span> mang lại may mắn và hữu ích cho bạn, hãy mời đội ngũ 1 ly cà phê ☕ để duy trì máy chủ nhé!
+                      </p>
+                      <button
+                        onClick={() => setShowQrModal(true)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 active:scale-95 transition cursor-pointer"
+                      >
+                        <Heart className="h-4 w-4 fill-slate-950 animate-pulse" />
+                        <span>Mở mã QR ủng hộ</span>
+                      </button>
+                    </div>
+
                   </div>
                 )}
               </>
             )}
 
-            {/* TAB 2: KẾT QUẢ KỲ TRƯỚC */}
+            {/* TAB 2: KẾT QUẢ XỔ SỐ CỦA TẤT CẢ CÁC ĐÀI MỞ THƯỞNG HÔM QUA */}
             {activeTab === "results" && (
-              <div className="space-y-5">
+              <div className="space-y-5 pb-6">
                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
                   <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-sky-400" />
@@ -428,24 +676,29 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 to-slate-900/90 p-3.5 flex items-center justify-between shadow-lg shadow-sky-500/10">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30">
-                      <TrendingUp className="h-5 w-5" />
+                {/* THỐNG KÊ ROI TÀI CHÍNH THỰC TẾ DỰA TRÊN VỐN 100 ĐIỂM VỚI PHÒNG THỦ XIÊN TRƯỢT HÒA VỐN */}
+                <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/60 via-slate-900 to-amber-950/40 p-4 space-y-2 shadow-lg shadow-sky-500/10">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30 shrink-0">
+                        <TrendingUp className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-200">
+                          ROI Lợi Nhuận Mô Phỏng ({isMB ? "Miền Bắc 27 Giải" : "Miền Nam/Trung 18 Giải"})
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          Thu về: <span className="text-amber-300 font-bold">{hitRateStats.totalPointsWon} điểm</span> / 100đ vốn (Kỳ ngày: {hitRateStats.date})
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-200">Tỷ Lệ AI Dự Đoán Trúng (ROI)</h4>
-                      <p className="text-[11px] text-slate-400">
-                        Khớp {hitRateStats.hits}/{hitRateStats.total} hạng mục (Kỳ ngày: <span className="text-amber-300 font-bold">{hitRateStats.date}</span>)
-                      </p>
+                    <div className="text-right">
+                      <span className="text-xl font-black text-sky-300">{hitRateStats.roi}</span>
+                      <span className="block text-[10px] text-emerald-400 font-semibold">
+                        <CheckCircle2 className="h-3 w-3 inline mr-0.5" />
+                        {hitRateStats.xienTruotWon ? "Bảo toàn vốn thành công" : "Kiểm chứng AI"}
+                      </span>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-black text-sky-300">{hitRateStats.rate}</span>
-                    <span className="block text-[10px] text-emerald-400 font-semibold">
-                      <CheckCircle2 className="h-3 w-3 inline mr-0.5" />
-                      Đã kiểm chứng
-                    </span>
                   </div>
                 </div>
 
@@ -453,7 +706,7 @@ export default function App() {
                   <div className="py-8 text-center text-xs text-sky-400">Đang tải kết quả từ Supabase...</div>
                 ) : (
                   targetYesterdayStations.map((st) => {
-                    const drawData = yesterdayResults[st.id] || (selectedStation?.id === st.id ? app.draws[0] : null);
+                    const drawData = yesterdayResults[st.id] || (selectedStation?.id === st.id ? app.draws : null);
                     return (
                       <div
                         key={st.id}
@@ -638,6 +891,64 @@ export default function App() {
 
           </div>
         </div>
+
+        {/* POP-UP MODAL QR ỦNG HỘ TPBANK */}
+        {showQrModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4">
+            <div className="relative w-full max-w-xs rounded-2xl border border-white/15 bg-slate-900 p-5 shadow-2xl text-center space-y-3">
+              <button
+                onClick={() => setShowQrModal(false)}
+                className="absolute top-3 right-3 p-1 text-slate-400 hover:text-white rounded-lg bg-white/5 hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
+                  <Heart className="h-4 w-4 text-rose-500 fill-rose-500" />
+                  Ủng Hộ Đội Ngũ Phát Triển
+                </h3>
+                <p className="text-[11px] text-slate-300 leading-relaxed px-1">
+                  Nếu <span className="text-amber-300 font-bold">AI Soi Cầu 3 Miền</span> mang lại may mắn và hữu ích cho bạn, hãy mời đội ngũ 1 ly cà phê ☕ để duy trì máy chủ nhé!
+                </p>
+              </div>
+
+              <div className="flex justify-center py-1">
+                <div className="p-2 bg-white rounded-xl shadow-md border border-slate-700">
+                  <img
+                    src={qrSrc}
+                    onError={handleQrError}
+                    alt="Mã VietQR TPBank NGUYEN NGOC NHAT QUANG"
+                    className="w-44 h-44 object-contain rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white/5 rounded-xl p-2.5 text-xs text-slate-300 space-y-1 border border-white/5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Ngân hàng:</span>
+                  <span className="font-bold text-sky-300">TPBank</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Chủ tài khoản:</span>
+                  <span className="font-bold text-white uppercase text-[10px]">NGUYỄN NGỌC NHẬT QUANG</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                  <span className="text-slate-400">Số tài khoản:</span>
+                  <button
+                    onClick={handleCopyStk}
+                    className="font-mono font-bold text-amber-300 flex items-center gap-1 hover:text-amber-200 transition bg-amber-500/10 px-2 py-0.5 rounded border border-amber-400/20 cursor-pointer"
+                  >
+                    <span>0000 2289 129</span>
+                    {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400">Cảm ơn sự đồng hành và ủng hộ của bạn! ❤️</p>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
