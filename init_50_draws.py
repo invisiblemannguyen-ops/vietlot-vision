@@ -17,7 +17,7 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
 TARGET_COUNT = 50          # Số kỳ cần nạp cho mỗi đài
-MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 6)
+MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 7)
 TRUNCATE_DIGITS = 3        # Cắt lấy 3D cho các giải >= 3D, Giải 8 (2D) giữ nguyên.
 
 HEADERS_SUPABASE = {
@@ -27,61 +27,61 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates,return=minimal',
 }
 
-# ==================== 2. CẤU HÌNH CÁC ĐÀI MỞ THƯỞNG THỨ 6 ====================
+# ==================== 2. CẤU HÌNH CÁC ĐÀI MỞ THƯỞNG THỨ 7 ====================
 STATION_CONFIGS = {
-    "VINHLONG": {
-        "name": "Vĩnh Long",
+    "LONGAN": {
+        "name": "Long An",
         "region": "MN",
-        "aliases": ["VĨNH LONG", "VINH LONG", "VINHLONG", "VĨNHLỒNG"],
-        "days": (4,),  # Thứ 6 (Mon=0, Tue=1, Wed=2, Thu=3, Fri=4)
+        "aliases": ["LONG AN", "LONGAN"],
+        "days": (5,),  # Thứ 7 (Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5)
         "paths": lambda d: [
             f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-vinh-long/ngay-{d}",
-            f"/mien-nam/xo-so-vinh-long?date={d}"
+            f"/mien-nam/xo-so-long-an/ngay-{d}",
+            f"/mien-nam/xo-so-long-an?date={d}"
         ]
     },
-    "BINHDUONG": {
-        "name": "Bình Dương",
+    "BINHPHUOC": {
+        "name": "Bình Phước",
         "region": "MN",
-        "aliases": ["BÌNH DƯƠNG", "BINH DUONG", "BINHDUONG", "BÌNHDƯƠNG"],
-        "days": (4,),  # Thứ 6
+        "aliases": ["BÌNH PHƯỚC", "BINH PHUOC", "BINHPHUOC"],
+        "days": (5,),  # Thứ 7
         "paths": lambda d: [
             f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-binh-duong/ngay-{d}",
-            f"/mien-nam/xo-so-binh-duong?date={d}"
+            f"/mien-nam/xo-so-binh-phuoc/ngay-{d}",
+            f"/mien-nam/xo-so-binh-phuoc?date={d}"
         ]
     },
-    "TRAVINH": {
-        "name": "Trà Vinh",
+    "HAUGIANG": {
+        "name": "Hậu Giang",
         "region": "MN",
-        "aliases": ["TRÀ VINH", "TRA VINH", "TRAVINH", "TRÀVINH"],
-        "days": (4,),  # Thứ 6
+        "aliases": ["HẬU GIANG", "HAU GIANG", "HAUGIANG"],
+        "days": (5,),  # Thứ 7
         "paths": lambda d: [
             f"/mien-nam?date={d}",
-            f"/mien-nam/xo-so-tra-vinh/ngay-{d}",
-            f"/mien-nam/xo-so-tra-vinh?date={d}"
+            f"/mien-nam/xo-so-hau-giang/ngay-{d}",
+            f"/mien-nam/xo-so-hau-giang?date={d}"
         ]
     },
-    "GIALAI": {
-        "name": "Gia Lai",
+    "QUANGNGAI": {
+        "name": "Quảng Ngãi",
         "region": "MT",
-        "aliases": ["GIA LAI", "GIA LAI", "GIALAI", "GIALAI"],
-        "days": (4,),  # Thứ 6
+        "aliases": ["QUẢNG NGÃI", "QUANG NGAI", "QUANGNGAI"],
+        "days": (5,),  # Thứ 7
         "paths": lambda d: [
             f"/mien-trung?date={d}",
-            f"/mien-trung/xo-so-gia-lai/ngay-{d}",
-            f"/mien-trung/xo-so-gia-lai?date={d}"
+            f"/mien-trung/xo-so-quang-ngai/ngay-{d}",
+            f"/mien-trung/xo-so-quang-ngai?date={d}"
         ]
     },
-    "NINHTHUAN": {
-        "name": "Ninh Thuận",
+    "DAKNONG": {
+        "name": "Đắc Nông",
         "region": "MT",
-        "aliases": ["NINH THUẬN", "NINH THUAN", "NINHTHUAN", "NINHTHUẬN"],
-        "days": (4,),  # Thứ 6
+        "aliases": ["ĐẮK NÔNG", "DAK NONG", "DAKNONG", "ĐẮKNÔNG", "ĐẮC NÔNG", "DAC NONG", "DACNONG", "ĐẮCNÔNG"],
+        "days": (5,),  # Thứ 7
         "paths": lambda d: [
-            f"/mien-trung?date={d}",
-            f"/mien-trung/xo-so-ninh-thuan/ngay-{d}",
-            f"/mien-trung/xo-so-ninh-thuan?date={d}"
+            f"/mien-trung/xo-so-dac-nong/ngay-{d}",
+            f"/mien-trung/xo-so-dak-nong/ngay-{d}",
+            f"/mien-trung?date={d}"
         ]
     }
 }
@@ -358,7 +358,7 @@ def save_to_supabase(data):
     return False
 
 
-# ==================== 8. CHẠY VÒNG LẶP CHO TỪNG ĐÀI THỨ 6 ====================
+# ==================== 8. CHẠY VÒNG LẶP CHO TỪNG ĐÀI THỨ 7 ====================
 def scrape_50_for_station(station_id):
     cfg = STATION_CONFIGS[station_id]
     name = cfg["name"]
@@ -424,7 +424,7 @@ def scrape_50_for_station(station_id):
 
 
 if __name__ == '__main__':
-    print("🚀 [NẠP 50 KỲ THỨ 6] Bắt đầu chạy nạp cho 5 đài Thứ 6 (Vĩnh Long, Bình Dương, Trà Vinh, Gia Lai, Ninh Thuận)...")
-    for st_id in ["VINHLONG", "BINHDUONG", "TRAVINH", "GIALAI", "NINHTHUAN"]:
+    print("🚀 [NẠP 50 KỲ THỨ 7] Bắt đầu chạy nạp cho 5 đài Thứ 7 (Long An, Bình Phước, Hậu Giang, Quảng Ngãi, Đắc Nông)...")
+    for st_id in ["LONGAN", "BINHPHUOC", "HAUGIANG", "QUANGNGAI", "DAKNONG"]:
         scrape_50_for_station(st_id)
-    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI THỨ 6!")
+    print("\n🏆 HOÀN TẤT TOÀN BỘ CÁC ĐÀI THỨ 7!")
