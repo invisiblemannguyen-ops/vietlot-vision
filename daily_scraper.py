@@ -1,12 +1,3 @@
-"""
-CÀO BÙ MIỀN BẮC NGÀY 26/11/2026  (file dùng một lần - chạy xong có thể xóa)
-
-Chạy:   python backfill_mb_26_11.py
-Ngày khác (nếu cần):   python backfill_mb_26_11.py --date 25-11-2026
-
-Cần 2 biến môi trường: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-Không xóa dữ liệu nào. Kỳ nào dư ngoài 50 kỳ sẽ được script hằng ngày tự dọn ở lần chạy kế tiếp.
-"""
 import os
 import re
 import sys
@@ -15,6 +6,8 @@ import argparse
 import datetime
 import unicodedata
 import requests
+import smtplib
+from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
 
 try:
@@ -22,10 +15,13 @@ try:
 except Exception:
     cffi_requests = None
 
+# ==================== 1. CẤU HÌNH SUPABASE & EMAIL ====================
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
-TRUNCATE_DIGITS = 3   # giống script hằng ngày
-STATION_ID = "MB"
+NOTIFY_EMAIL = "invisibleman.nguyen@gmail.com"
+
+TARGET_COUNT = 50          # Duy trì đúng 50 kỳ gần nhất cuốn chiếu
+TRUNCATE_DIGITS = 3        # Cắt lấy 3D cho các giải >= 3D
 
 HEADERS_SUPABASE = {
     'apikey': SUPABASE_KEY or '',
@@ -34,9 +30,54 @@ HEADERS_SUPABASE = {
     'Prefer': 'resolution=merge-duplicates,return=minimal',
 }
 
-EXPECTED_COUNT_MB = {'DB': 1, 'G1': 1, 'G2': 2, 'G3': 6, 'G4': 4, 'G5': 6, 'G6': 3, 'G7': 4}
-EXPECTED_LEN_MB = {'DB': 5, 'G1': 5, 'G2': 5, 'G3': 5, 'G4': 4, 'G5': 4, 'G6': 3, 'G7': 2}
-PRIZE_ORDER_MB = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']
+# ==================== 2. LỊCH QUAY THƯỜNG CÁC ĐÀI (T2 -> CN) ====================
+STATION_DB = {
+    # MIỀN NAM (18 GIẢI / ĐÀI)
+    "TPHCM":     {"name": "TP.HCM", "region": "MN", "days": (0, 5), "aliases": ["TP.HCM", "TPHCM", "HỒ CHÍ MINH"], "path": "xo-so-tphcm"},
+    "DONGTHAP":  {"name": "Đồng Tháp", "region": "MN", "days": (0,), "aliases": ["ĐỒNG THÁP", "DONGTHAP"], "path": "xo-so-dong-thap"},
+    "CAMAU":     {"name": "Cà Mau", "region": "MN", "days": (0,), "aliases": ["CÀ MAU", "CAMAU"], "path": "xo-so-ca-mau"},
+    "BENTRE":    {"name": "Bến Tre", "region": "MN", "days": (1,), "aliases": ["BẾN TRE", "BENTRE"], "path": "xo-so-ben-tre"},
+    "VUNGTAU":   {"name": "Vũng Tàu", "region": "MN", "days": (1,), "aliases": ["VŨNG TÀU", "VUNGTAU"], "path": "xo-so-vung-tau"},
+    "BACLIEU":   {"name": "Bạc Liêu", "region": "MN", "days": (1,), "aliases": ["BẠC LIÊU", "BACLIEU"], "path": "xo-so-bac-lieu"},
+    "DONGNAI":   {"name": "Đồng Nai", "region": "MN", "days": (2,), "aliases": ["ĐỒNG NAI", "DONGNAI"], "path": "xo-so-dong-nai"},
+    "CANTHO":    {"name": "Cần Thơ", "region": "MN", "days": (2,), "aliases": ["CẦN THƠ", "CANTHO"], "path": "xo-so-can-tho"},
+    "SOCTRANG":  {"name": "Sóc Trăng", "region": "MN", "days": (2,), "aliases": ["SÓC TRĂNG", "SOCTRANG"], "path": "xo-so-soc-trang"},
+    "TAYNINH":   {"name": "Tây Ninh", "region": "MN", "days": (3,), "aliases": ["TÂY NINH", "TAYNINH"], "path": "xo-so-tay-ninh"},
+    "ANGIANG":   {"name": "An Giang", "region": "MN", "days": (3,), "aliases": ["AN GIANG", "ANGIANG"], "path": "xo-so-an-giang"},
+    "BINHTHUAN": {"name": "Bình Thuận", "region": "MN", "days": (3,), "aliases": ["BÌNH THUẬN", "BINHTHUAN"], "path": "xo-so-binh-thuan"},
+    "VINHLONG":  {"name": "Vĩnh Long", "region": "MN", "days": (4,), "aliases": ["VĨNH LONG", "VINHLONG"], "path": "xo-so-vinh-long"},
+    "BINHDUONG": {"name": "Bình Dương", "region": "MN", "days": (4,), "aliases": ["BÌNH DƯƠNG", "BINHDUONG"], "path": "xo-so-binh-duong"},
+    "TRAVINH":   {"name": "Trà Vinh", "region": "MN", "days": (4,), "aliases": ["TRÀ VINH", "TRAVINH"], "path": "xo-so-tra-vinh"},
+    "LONGAN":    {"name": "Long An", "region": "MN", "days": (5,), "aliases": ["LONG AN", "LONGAN"], "path": "xo-so-long-an"},
+    "BINHPHUOC": {"name": "Bình Phước", "region": "MN", "days": (5,), "aliases": ["BÌNH PHƯỚC", "BINHPHUOC"], "path": "xo-so-binh-phuoc"},
+    "HAUGIANG":  {"name": "Hậu Giang", "region": "MN", "days": (5,), "aliases": ["HẬU GIANG", "HAUGIANG"], "path": "xo-so-hau-giang"},
+    "TIENGIANG": {"name": "Tiền Giang", "region": "MN", "days": (6,), "aliases": ["TIỀN GIANG", "TIENGIANG"], "path": "xo-so-tien-giang"},
+    "KIENGIANG": {"name": "Kiên Giang", "region": "MN", "days": (6,), "aliases": ["KIÊN GIANG", "KIENGIANG"], "path": "xo-so-kien-giang"},
+    "DALAT":     {"name": "Đà Lạt", "region": "MN", "days": (6,), "aliases": ["ĐÀ LẠT", "DALAT", "LÂM ĐỒNG"], "path": "xo-so-da-lat"},
+
+    # MIỀN TRUNG (18 GIẢI / ĐÀI)
+    "TTHUE":     {"name": "Thừa Thiên Huế", "region": "MT", "days": (0, 6), "aliases": ["THỪA THIÊN HUẾ", "T.T.HUẾ", "TTHUE", "HUẾ"], "path": "xo-so-thua-thien-hue"},
+    "PHUYEN":    {"name": "Phú Yên", "region": "MT", "days": (0,), "aliases": ["PHÚ YÊN", "PHUYEN"], "path": "xo-so-phu-yen"},
+    "DAKLAK":    {"name": "Đắc Lắc", "region": "MT", "days": (1,), "aliases": ["ĐẮK LẮK", "ĐẮC LẮC", "DAKLAK", "DAC LAC"], "path": "xo-so-dac-lac"},
+    "QUANGNAM":  {"name": "Quảng Nam", "region": "MT", "days": (1,), "aliases": ["QUẢNG NAM", "QUANGNAM"], "path": "xo-so-quang-nam"},
+    "DANANG":    {"name": "Đà Nẵng", "region": "MT", "days": (2, 5), "aliases": ["ĐÀ NẴNG", "DANANG"], "path": "xo-so-da-nang"},
+    "KHANHHOA":  {"name": "Khánh Hòa", "region": "MT", "days": (2, 6), "aliases": ["KHÁNH HÒA", "KHANHHOA"], "path": "xo-so-khanh-hoa"},
+    "BINHDINH":  {"name": "Bình Định", "region": "MT", "days": (3,), "aliases": ["BÌNH ĐỊNH", "BINHDINH"], "path": "xo-so-binh-dinh"},
+    "QUANGTRI":  {"name": "Quảng Trị", "region": "MT", "days": (3,), "aliases": ["QUẢNG TRỊ", "QUANGTRI"], "path": "xo-so-quang-tri"},
+    "QUANGBINH": {"name": "Quảng Bình", "region": "MT", "days": (3,), "aliases": ["QUẢNG BÌNH", "QUANGBINH"], "path": "xo-so-quang-binh"},
+    "GIALAI":    {"name": "Gia Lai", "region": "MT", "days": (4,), "aliases": ["GIA LAI", "GIALAI"], "path": "xo-so-gia-lai"},
+    "NINHTHUAN": {"name": "Ninh Thuận", "region": "MT", "days": (4,), "aliases": ["NINH THUẬN", "NINHTHUAN"], "path": "xo-so-ninh-thuan"},
+    "QUANGNGAI": {"name": "Quảng Ngãi", "region": "MT", "days": (5,), "aliases": ["QUẢNG NGÃI", "QUANGNGAI"], "path": "xo-so-quang-ngai"},
+    "DAKNONG":   {"name": "Đắc Nông", "region": "MT", "days": (5,), "aliases": ["ĐẮK NÔNG", "ĐẮC NÔNG", "DAKNONG", "DAC NONG"], "path": "xo-so-dac-nong"},
+    "KONTUM":    {"name": "Kon Tum", "region": "MT", "days": (6,), "aliases": ["KON TUM", "KONTUM"], "path": "xo-so-kon-tum"},
+
+    # MIỀN BẮC (27 GIẢI - KHÔNG GIẢI 8)
+    "MB":        {"name": "Miền Bắc", "region": "MB", "days": (0, 1, 2, 3, 4, 5, 6), "aliases": ["MIỀN BẮC", "MB", "HÀ NỘI"], "path": "mien-bac"}
+}
+
+EXPECTED_COUNT_MN_MT = {'DB': 1, 'G1': 1, 'G2': 1, 'G3': 2, 'G4': 7, 'G5': 1, 'G6': 3, 'G7': 1, 'G8': 1}
+EXPECTED_LEN_MN_MT = {'DB': (5, 6), 'G1': (5,), 'G2': (5,), 'G3': (5,), 'G4': (5,), 'G5': (4,), 'G6': (4, 3), 'G7': (3,), 'G8': (2,)}
+PRIZE_ORDER_MN_MT = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8']
 
 LABELS = [
     ('DB', ['ĐẶC BIỆT', 'ĐB']),
@@ -56,6 +97,113 @@ def norm(text):
     return unicodedata.normalize('NFC', text).strip().upper()
 
 
+def send_error_email(to_email, region, failed_stations, db_date):
+    """Chỉ gửi email khi LẦN 3 THẤT BẠI."""
+    gmail_user = os.environ.get('GMAIL_USER')
+    gmail_pass = os.environ.get('GMAIL_APP_PASS')
+    
+    if not gmail_user or not gmail_pass:
+        print(f"  ℹ️ [THÔNG BÁO] GMAIL_USER/GMAIL_APP_PASS chưa cài trong Secrets. GitHub Actions sẽ phát lệnh exit(1) để báo đỏ.")
+        return
+
+    subject = f"🚨 [CẢNH BÁO KQXS] Miền {region} ngày {db_date} bị thiếu đài!"
+    body = f"""Hệ thống đã cào 3 lần (cách nhau 5 phút) nhưng KHÔNG THỂ lấy đủ dữ liệu Miền {region} ngày {db_date}.
+
+Danh sách đài thất bại:
+- {', '.join(failed_stations)}
+
+Vui lòng kiểm tra lại nguồn kqxs.vn hoặc log trên GitHub Actions!
+"""
+    msg = MIMEText(body, 'plain', 'utf-8')
+    msg['Subject'] = subject
+    msg['From'] = gmail_user
+    msg['To'] = to_email
+
+    try:
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(gmail_user, gmail_pass)
+        server.sendmail(gmail_user, [to_email], msg.as_string())
+        server.close()
+        print(f"  ✉️ Đã gửi email thông báo thất bại lần 3 tới {to_email}!")
+    except Exception as e:
+        print(f"  ⚠️ Lỗi gửi email SMTP: {e}")
+
+
+def ensure_station_exists(station_id, station_name, region):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    endpoint_get = f"{SUPABASE_URL}/rest/v1/stations?select=*"
+    try:
+        res = requests.get(endpoint_get, headers=HEADERS_SUPABASE, timeout=10)
+        if res.status_code == 200:
+            existing_ids = {str(s.get("id", s.get("station_id", ""))).upper() for s in res.json()}
+            if station_id.upper() in existing_ids:
+                return
+    except Exception:
+        pass
+
+    endpoint_post = f"{SUPABASE_URL}/rest/v1/stations"
+    for p in [{"id": station_id, "name": station_name, "region": region}, {"station_id": station_id, "id": station_id, "name": station_name, "region": region}]:
+        try:
+            r = requests.post(endpoint_post, json=p, headers=HEADERS_SUPABASE, timeout=10)
+            if r.status_code in (200, 201, 204, 409):
+                break
+        except Exception:
+            pass
+
+
+def get_existing_date_for_station(station_id, db_date):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&draw_date=eq.{db_date}&select=draw_date"
+    try:
+        res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
+        if res.status_code == 200 and len(res.json()) > 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def cleanup_old_records(station_id):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=draw_date&order=draw_date.desc&limit=1000"
+    try:
+        res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            if isinstance(data, list) and len(data) > TARGET_COUNT:
+                all_dates = sorted([str(r.get('draw_date'))[:10] for r in data if r.get('draw_date')], reverse=True)
+                delete_dates = all_dates[TARGET_COUNT:]
+                for old_date in delete_dates:
+                    del_ep = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&draw_date=eq.{old_date}"
+                    requests.delete(del_ep, headers=HEADERS_SUPABASE, timeout=10)
+                print(f"  🧹 [{station_id}] Đã dọn dẹp {len(delete_dates)} kỳ cũ (duy trì 50 kỳ cuốn chiếu).")
+    except Exception as e:
+        print(f"  ⚠️ [CLEANUP LỖI] {e}")
+
+
+def fetch_kqxs_html(path_url):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36', 'Accept-Language': 'vi-VN,vi;q=0.9'}
+    for domain in ["www.kqxs.vn", "kqxs.vn"]:
+        full_url = f"https://{domain}{path_url}"
+        if cffi_requests:
+            try:
+                res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=12)
+                if res.status_code == 200 and res.text:
+                    return res.text
+            except Exception:
+                pass
+        try:
+            res = requests.get(full_url, headers=headers, timeout=12)
+            if res.status_code == 200 and res.text:
+                return res.text
+        except Exception:
+            pass
+    return None
+
+
 def format_prize_number(raw_str):
     clean = re.sub(r'\D', '', str(raw_str))
     if TRUNCATE_DIGITS and len(clean) >= 3:
@@ -72,192 +220,277 @@ def classify_label(label):
     return None
 
 
-def fetch_kqxs_html(path_url):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
-               'Accept-Language': 'vi-VN,vi;q=0.9'}
-    for domain in ["www.kqxs.vn", "kqxs.vn"]:
-        full_url = f"https://{domain}{path_url}"
-        if cffi_requests:
+def expand_table(table):
+    rows = table.find_all('tr')
+    grid = []
+    active_rowspans = {}
+    for r in rows:
+        row_cells = []
+        c_idx = 0
+        html_cells = r.find_all(['td', 'th'])
+        cell_iter = iter(html_cells)
+        while True:
+            if c_idx in active_rowspans:
+                rem, text = active_rowspans[c_idx]
+                row_cells.append(text)
+                if rem - 1 > 0:
+                    active_rowspans[c_idx] = (rem - 1, text)
+                else:
+                    del active_rowspans[c_idx]
+                c_idx += 1
+                continue
             try:
-                res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=15)
-                if res.status_code == 200 and res.text:
-                    return res.text
-            except Exception:
-                pass
-        try:
-            res = requests.get(full_url, headers=headers, timeout=15)
-            if res.status_code == 200 and res.text:
-                return res.text
-        except Exception:
-            pass
-    return None
+                cell = next(cell_iter)
+            except StopIteration:
+                break
+            rowspan, colspan = int(cell.get('rowspan', 1)), int(cell.get('colspan', 1))
+            text = cell.get_text(separator=' ').strip()
+            for _ in range(colspan):
+                row_cells.append(text)
+                if rowspan > 1:
+                    active_rowspans[c_idx] = (rowspan - 1, text)
+                c_idx += 1
+        grid.append(row_cells)
+    return grid
 
 
-# ---------- PARSER MIỀN BẮC (giống script hằng ngày) ----------
-def page_matches_date(soup, d_obj):
-    parts = []
-    if soup.title:
-        parts.append(soup.title.get_text(' '))
-    og = soup.find('meta', attrs={'property': 'og:title'})
-    if og and og.get('content'):
-        parts.append(og.get('content'))
-    h1 = soup.find('h1')
-    if h1:
-        parts.append(h1.get_text(' '))
-    found = {f.replace('/', '-') for f in re.findall(r'\d{2}[/-]\d{2}[/-]\d{4}', ' '.join(parts))}
-    return d_obj.strftime("%d-%m-%Y") in found
+def find_station_column(grid, aliases):
+    for row in grid[:4]:
+        if len(row) <= 1:
+            continue
+        for idx in range(1, len(row)):
+            txt = norm(row[idx])
+            txt_clean = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', txt)
+            if any(a in txt_clean for a in aliases):
+                return idx
+    return 1 if max((len(r) for r in grid), default=0) == 2 else None
 
 
-def collect_mb_prizes(table):
+def collect_prizes(grid, col=1):
     prizes = {}
-    current = None
-    for tr in table.find_all('tr'):
-        tds = tr.find_all(['td', 'th'])
-        if len(tds) < 2:
+    for r in grid:
+        if len(r) <= col:
             continue
-        label = norm(tds[0].get_text(' '))
-        if label:
-            if any(k in label for k in ['MÃ', 'KÝ HIỆU', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'THỐNG KÊ']):
-                current = None
-                continue
-            key = classify_label(label)
-            if key not in EXPECTED_LEN_MB:
-                current = None
-                continue
-            current = key
-        elif current is None:
+        label = norm(r)
+        if any(k in label for k in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'THỐNG KÊ']):
             continue
-        key = current
-        for td in tds[1:]:
-            for n in re.findall(r'\d+', td.get_text(' ')):
-                if len(n) == EXPECTED_LEN_MB[key]:
-                    prizes.setdefault(key, []).append(n)
+        key = classify_label(label)
+        if not key:
+            continue
+        for n in re.findall(r'\d+', r[col]):
+            valid_lens = EXPECTED_LEN_MN_MT[key] if isinstance(EXPECTED_LEN_MN_MT[key], (tuple, list)) else (EXPECTED_LEN_MN_MT[key],)
+            if len(n) in valid_lens:
+                prizes.setdefault(key, []).append(n)
     return prizes
 
 
-def parse_mb(html, db_date, d_obj):
+# ==================== PARSER CHUYÊN DỤNG CHO MIỀN BẮC (27 GIẢI - KHÔNG GIẢI 8) ====================
+def parse_mb(html, db_date):
     if not html:
         return None
     soup = BeautifulSoup(html, 'html.parser')
-    if not page_matches_date(soup, d_obj):
-        print("  ℹ️ Tiêu đề trang không phải ngày cần cào, bỏ qua.")
+    tables = soup.find_all('table')
+    box_table = None
+    for t in tables:
+        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1', re.I)):
+            box_table = t
+            break
+    if not box_table:
         return None
-    best = None
+
+    raw_prizes = []
+    special_prize = ""
+    g7_list = []
+
+    for tr in box_table.find_all('tr'):
+        tds = tr.find_all(['td', 'th'])
+        if len(tds) >= 2:
+            label = tds[0].get_text(separator=' ').strip().upper()
+            if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO']):
+                continue
+
+            nums_raw = []
+            for td in tds[1:]:
+                nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
+
+            formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
+            if not formatted_nums:
+                continue
+
+            if re.search(r'ĐB|ĐẶC BIỆT', label):
+                if formatted_nums:
+                    special_prize = formatted_nums[0]
+            elif re.search(r'G7|GIẢI 7', label):
+                g7_list.extend(formatted_nums)
+
+            raw_prizes.extend(formatted_nums)
+
+    if not raw_prizes or len(raw_prizes) < 27:
+        return None
+
+    return {
+        "station_id": "MB",
+        "draw_date": db_date,
+        "special_prize": special_prize,
+        "seventh_or_eighth": g7_list,
+        "raw_prizes": raw_prizes[:27]
+    }
+
+
+# ==================== PARSER CHO MIỀN NAM VÀ MIỀN TRUNG (18 GIẢI) ====================
+def parse_mn_mt(html, station_id, aliases, db_date):
+    if not html:
+        return None
+    soup = BeautifulSoup(html, 'html.parser')
     for t in soup.find_all('table'):
-        prizes = collect_mb_prizes(t)
-        if not prizes:
-            continue
-        if all(len(prizes.get(k, [])) == c for k, c in EXPECTED_COUNT_MB.items()):
-            raw_prizes = [format_prize_number(n) for key in PRIZE_ORDER_MB for n in prizes[key]]
+        grid = expand_table(t)
+        col = find_station_column(grid, aliases)
+        if col is not None:
+            prizes = collect_prizes(grid, col)
+            for key, cnt in EXPECTED_COUNT_MN_MT.items():
+                if len(prizes.get(key, [])) != cnt:
+                    return None
+            raw_prizes = [format_prize_number(n) for key in PRIZE_ORDER_MN_MT for n in prizes[key]]
             return {
-                "station_id": STATION_ID,
+                "station_id": station_id,
                 "draw_date": db_date,
-                "special_prize": format_prize_number(prizes['DB'][0]),
-                "seventh_or_eighth": [format_prize_number(n) for n in prizes['G7']],
+                "special_prize": format_prize_number(prizes['DB']),
+                "seventh_or_eighth": [format_prize_number(n) for n in prizes['G8']],
                 "raw_prizes": raw_prizes,
             }
-        if best is None or sum(len(v) for v in best.values()) < sum(len(v) for v in prizes.values()):
-            best = prizes
-    if best:
-        print(f"  ℹ️ Bảng chưa đủ 27 giải: { {k: len(v) for k, v in best.items()} }")
-    else:
-        print("  ℹ️ Không thấy bảng kết quả nào trong HTML.")
     return None
 
 
-# ---------- SUPABASE ----------
-def already_exists(db_date):
-    endpoint = (f"{SUPABASE_URL}/rest/v1/draw_results"
-                f"?station_id=eq.{STATION_ID}&draw_date=eq.{db_date}&select=draw_date")
-    try:
-        res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
-        return res.status_code == 200 and len(res.json()) > 0
-    except Exception:
-        return False
-
-
-def ensure_station_exists():
-    try:
-        res = requests.get(f"{SUPABASE_URL}/rest/v1/stations?select=*", headers=HEADERS_SUPABASE, timeout=10)
-        if res.status_code == 200:
-            ids = {str(s.get("id", s.get("station_id", ""))).upper() for s in res.json()}
-            if STATION_ID in ids:
-                return
-    except Exception:
-        pass
-    for p in [{"id": STATION_ID, "name": "Miền Bắc", "region": "MB"},
-              {"station_id": STATION_ID, "id": STATION_ID, "name": "Miền Bắc", "region": "MB"}]:
-        try:
-            r = requests.post(f"{SUPABASE_URL}/rest/v1/stations", json=p, headers=HEADERS_SUPABASE, timeout=10)
-            if r.status_code in (200, 201, 204, 409):
-                break
-        except Exception:
-            pass
+def parse_station_html(html, station_id, aliases, db_date):
+    if station_id == "MB":
+        return parse_mb(html, db_date)
+    return parse_mn_mt(html, station_id, aliases, db_date)
 
 
 def save_to_supabase(data):
-    raw_prizes = data["raw_prizes"]
-    sp = str(data["special_prize"]).strip()
+    if not data or not SUPABASE_URL or not SUPABASE_KEY:
+        return False
+    raw_prizes = data.get("raw_prizes", [])
     payload = {
         "station_id": data["station_id"],
         "draw_date": data["draw_date"],
-        "special_prize": sp,
+        "special_prize": str(data["special_prize"]).strip(),
         "all_prizes": {
-            "special_prize": sp,
+            "special_prize": str(data["special_prize"]).strip(),
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
             "raw_prizes": raw_prizes,
-            "lo_numbers": [p[-2:] for p in raw_prizes if len(p) >= 2],
-        },
+            "lo_numbers": [p[-2:] for p in raw_prizes if len(p) >= 2]
+        }
     }
     try:
-        resp = requests.post(f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date",
-                             json=payload, headers=HEADERS_SUPABASE, timeout=12)
+        resp = requests.post(f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date", json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"  ✅ ĐÃ LƯU MB ngày {data['draw_date']} | ĐB: '{sp}' | {len(raw_prizes)} giải")
+            print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {data['station_id']} | Ngày: {data['draw_date']} | ĐB: '{data['special_prize']}' | Số giải: {len(raw_prizes)}")
             return True
-        print(f"  ❌ Lỗi lưu Supabase: {resp.status_code} - {resp.text[:300]}")
     except Exception as e:
-        print(f"  ❌ Lỗi lưu Supabase: {e}")
+        print(f"  ❌ [LỖI LƯU SUPABASE] {e}")
     return False
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--date", default="26-11-2026", help="Ngày cần cào bù, định dạng dd-mm-yyyy")
-    args = ap.parse_args()
+def get_candidate_paths(st_id, cfg, d_str):
+    region = cfg["region"]
+    path_slug = cfg["path"]
+    if st_id == "MB":
+        return [
+            f"/mien-bac/ngay-{d_str}",
+            f"/xo-so-mien-bac/ngay-{d_str}",
+            f"/mien-bac?date={d_str}",
+            f"/mien-bac"
+        ]
+    
+    region_dir = "mien-nam" if region == "MN" else "mien-trung"
+    return [
+        f"/{region_dir}/{path_slug}/ngay-{d_str}",
+        f"/{path_slug}/ngay-{d_str}",
+        f"/{region_dir}/{path_slug}?date={d_str}",
+        f"/{region_dir}?date={d_str}"
+    ]
 
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌ Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY.")
-        sys.exit(1)
 
-    d_obj = datetime.datetime.strptime(args.date, "%d-%m-%Y").date()
-    d_str = d_obj.strftime("%d-%m-%Y")
-    db_date = d_obj.strftime("%Y-%m-%d")
-    print(f"🚀 Cào bù Miền Bắc ngày {d_str}")
+def scrape_today(target_region=None):
+    vn_tz = datetime.timezone(datetime.timedelta(hours=7))
+    today_obj = datetime.datetime.now(vn_tz).date()
+    weekday = today_obj.weekday()
+    d_str = today_obj.strftime("%d-%m-%Y")
+    db_date = today_obj.strftime("%Y-%m-%d")
 
-    if already_exists(db_date):
-        print(f"✅ MB ngày {db_date} đã có trong Supabase, không cần cào.")
+    print(f"🚀 [CÀO HÀNG NGÀY] Ngày {d_str} (Thứ {weekday + 2 if weekday < 6 else 'CN'})")
+
+    today_stations = []
+    for st_id, cfg in STATION_DB.items():
+        if target_region and cfg["region"] != target_region.upper():
+            continue
+        if weekday in cfg["days"]:
+            today_stations.append((st_id, cfg))
+
+    if not today_stations:
+        print("Không có đài nào mở thưởng hôm nay cho khu vực này.")
         return
 
-    ensure_station_exists()
+    completed_stations = set()
 
-    paths = [f"/mien-bac/ngay-{d_str}", f"/xo-so-mien-bac/ngay-{d_str}", f"/mien-bac?date={d_str}"]
+    # THỰC HIỆN TỐI ĐA 3 LẦN THỬ (CÁCH NHAU 5 PHÚT)
     for attempt in range(1, 4):
-        print(f"🔄 Lần thử {attempt}/3")
-        for path in paths:
-            html = fetch_kqxs_html(path)
-            parsed = parse_mb(html, db_date, d_obj) if html else None
-            if parsed:
-                print(f"  Nguồn: {path}")
-                if save_to_supabase(parsed):
-                    return
-                sys.exit(1)
-        if attempt < 3:
-            time.sleep(10)
+        print(f"\n==================================================")
+        print(f"🔄 [LẦN CÀO {attempt}/3] Đã xong {len(completed_stations)}/{len(today_stations)} đài.")
 
-    print("💥 Không lấy được dữ liệu MB sau 3 lần thử.")
+        for st_id, cfg in today_stations:
+            if st_id in completed_stations:
+                continue
+
+            if get_existing_date_for_station(st_id, db_date):
+                print(f"  ✅ Đài {cfg['name']} ({st_id}) ĐÃ CÓ DỮ LIỆU ngày {db_date}")
+                completed_stations.add(st_id)
+                continue
+
+            name, region, aliases = cfg["name"], cfg["region"], cfg["aliases"]
+            print(f"📌 Đang cào đài: {name} ({st_id}) - Miền {region}")
+            ensure_station_exists(st_id, name, region)
+
+            candidate_paths = get_candidate_paths(st_id, cfg, d_str)
+            parsed = None
+            used_path = ""
+
+            for path_url in candidate_paths:
+                html = fetch_kqxs_html(path_url)
+                if html:
+                    parsed = parse_station_html(html, st_id, aliases, db_date)
+                    if parsed:
+                        used_path = path_url
+                        break
+
+            if parsed and save_to_supabase(parsed):
+                cleanup_old_records(st_id)
+                completed_stations.add(st_id)
+                print(f"  ✅ Cào thành công đài {name} từ URL: {used_path}")
+            else:
+                print(f"  ⚠️ Chưa lấy được KQXS đài {name} ngày {d_str}")
+
+        if len(completed_stations) == len(today_stations):
+            print(f"\n🎉 [THÀNH CÔNG RỰC RỠ] Đã cào đủ {len(completed_stations)}/{len(today_stations)} đài cho Miền {target_region}!")
+            return
+
+        # 2 LẦN ĐẦU CHƯA XONG: CHỈ CHỜ 5 PHÚT, KHÔNG BÁO LỖI HAY GỬI MAIL
+        if attempt < 3:
+            missing_names = [cfg['name'] for st_id, cfg in today_stations if st_id not in completed_stations]
+            print(f"\n⏳ Lần {attempt} chưa xong: Còn thiếu {len(missing_names)} đài ({', '.join(missing_names)}).")
+            print(f"💤 Tạm dừng 5 phút (300 giây) rồi thử lại Lần {attempt + 1}...")
+            time.sleep(300)
+
+    # NẾU SAU LẦN 3 VẪN THIẾU ĐÀI -> MỚI BÁO LỖI VÀ GỬI EMAIL THÔNG BÁO
+    failed_names = [cfg['name'] for st_id, cfg in today_stations if st_id not in completed_stations]
+    print(f"\n💥 [LỖI LẦN 3 CUỐI CÙNG] Đã cào 3 lần nhưng Miền {target_region} vẫn thiếu {len(failed_names)} đài: {', '.join(failed_names)}")
+    send_error_email(NOTIFY_EMAIL, target_region, failed_names, db_date)
     sys.exit(1)
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="Scraper KQXS hàng ngày theo vùng")
+    parser.add_argument("--region", type=str, help="Vùng cần quét: MN, MT, MB")
+    args = parser.parse_args()
+    scrape_today(target_region=args.region)
