@@ -19,9 +19,9 @@ SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 STATION_ID = "TTHUE"
 STATION_NAME = "Thừa Thiên Huế"
 REGION = "MT"
-TARGET_COUNT = 50          # Số kỳ cần nạp
-MAX_LOOKBACK_DRAWS = 70    # Tối đa 70 kỳ mở thưởng lùi về trước (Thứ 2 & Chủ Nhật)
-TRUNCATE_DIGITS = 3        # Cắt lấy 3D cho các giải >= 3D, Giải 8 (2D) giữ nguyên.
+TARGET_COUNT = 50          # Số kỳ mới nhất cần duy trì trong CSDL
+MAX_LOOKBACK_DRAWS = 70    # Số kỳ tối đa quét lùi từ hôm nay
+TRUNCATE_DIGITS = 3        # Cắt lấy 3D cho giải >= 3D, G8 (2D) giữ nguyên
 
 HEADERS_SUPABASE = {
     'apikey': SUPABASE_KEY or '',
@@ -56,7 +56,6 @@ LABELS = [
     ('G1', ['G.1', 'G1', 'GIẢI 1', 'GIẢI NHẤT']),
 ]
 
-# Các nhãn hiển thị của đài Thừa Thiên Huế
 STATION_ALIASES = ["THỪA THIÊN HUẾ", "T.T.HUẾ", "TTHUE", "HUẾ", "THỦA THIÊN HUẾ"]
 
 
@@ -102,12 +101,13 @@ def ensure_station_exists():
             pass
 
 
-# ==================== 3. SUPABASE: KIỂM TRA NGÀY ĐÃ CÓ ====================
+# ==================== 3. SUPABASE: LẤY VÀ CẮT TỈA KỲ CŨ ====================
 def get_existing_dates():
+    """Lấy danh sách tất cả các ngày đã có trong Supabase của đài."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return set()
     endpoint = (f"{SUPABASE_URL}/rest/v1/draw_results"
-                f"?station_id=eq.{STATION_ID}&select=draw_date&limit=1000")
+                f"?station_id=eq.{STATION_ID}&select=draw_date&order=draw_date.desc&limit=1000")
     try:
         res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
         if res.status_code == 200:
@@ -117,6 +117,33 @@ def get_existing_dates():
     except Exception as e:
         print(f"  ⚠️ [SUPABASE GET] {e}")
     return set()
+
+
+def cleanup_old_records():
+    """Xóa các kỳ cũ vượt quá 50 kỳ gần nhất để duy trì đúng 50 kỳ cuốn chiếu."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+
+    endpoint = (f"{SUPABASE_URL}/rest/v1/draw_results"
+                f"?station_id=eq.{STATION_ID}&select=draw_date&order=draw_date.desc&limit=1000")
+    try:
+        res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            if isinstance(data, list) and len(data) > TARGET_COUNT:
+                all_dates = sorted([str(r.get('draw_date'))[:10] for r in data if r.get('draw_date')], reverse=True)
+                delete_dates = all_dates[TARGET_COUNT:]
+
+                print(f"\n🧹 [CUỐN CHIẾU] Phát hiện {len(all_dates)} kỳ trong CSDL. Đang xóa {len(delete_dates)} kỳ cũ nhất...")
+                for old_date in delete_dates:
+                    del_endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{STATION_ID}&draw_date=eq.{old_date}"
+                    r_del = requests.delete(del_endpoint, headers=HEADERS_SUPABASE, timeout=10)
+                    if r_del.status_code in (200, 204):
+                        print(f"  🗑️ Đã xóa kỳ cũ ngày: {old_date}")
+                    else:
+                        print(f"  ⚠️ Không xóa được kỳ ngày {old_date}: {r_del.status_code}")
+    except Exception as e:
+        print(f"  ⚠️ [LỖI CLEANUP] {e}")
 
 
 # ==================== 4. TẢI HTML CHỐNG BOT ====================
@@ -153,7 +180,6 @@ def date_in_html(html, d_obj):
 
 
 def format_prize_number(raw_str):
-    """Số >= 3D lấy 3D cuối. Giải 8 (2D) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if TRUNCATE_DIGITS and len(clean) > TRUNCATE_DIGITS:
         return clean[-TRUNCATE_DIGITS:]
@@ -169,7 +195,6 @@ def classify_label(label):
 
 
 def expand_table(table):
-    """Ma trận hóa bảng HTML xử lý triệt để rowspan/colspan."""
     rows = table.find_all('tr')
     grid = []
     active_rowspans = {}
@@ -304,30 +329,25 @@ def save_to_supabase(data):
     return False
 
 
-# ==================== 7. CHƯƠNG TRÌNH NẠP 50 KỲ THỪA THIÊN HUẾ (T2 & CN) ====================
+# ==================== 7. CHƯƠNG TRÌNH NẠP & CUỐN CHIẾU 50 KỲ GẦN NHẤT ====================
 def scrape_50_tthue():
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌ Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong biến môi trường.")
-        sys.exit(1)
-
     ensure_station_exists()
 
     existing = get_existing_dates()
-    print(f"🚀 [THỪA THIÊN HUẾ {TARGET_COUNT} KỲ] Đang có {len(existing)}/{TARGET_COUNT} kỳ trong Supabase")
-    if len(existing) >= TARGET_COUNT:
-        print(f"✅ Đài THỪA THIÊN HUẾ ĐÃ ĐỦ {TARGET_COUNT} KỲ!")
-        return
+    print(f"🚀 [THỪA THIÊN HUẾ CUỐN CHIẾU {TARGET_COUNT} KỲ GẦN NHẤT]")
+    print(f"📊 Hiện có {len(existing)} kỳ trong Supabase.")
 
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date()
     curr = today
     checked = 0
-    have = len(existing)
+    scraped_recent_count = 0
     new_saved = 0
 
     # LỊCH QUAY THỪA THIÊN HUẾ: THỨ 2 (0) VÀ CHỦ NHẬT (6)
     SCHEDULE_DAYS = (0, 6)
 
-    while have < TARGET_COUNT and checked < MAX_LOOKBACK_DRAWS:
+    # Quét lùi từ hôm nay cho đủ 50 kỳ quay thưởng gần nhất
+    while scraped_recent_count < TARGET_COUNT and checked < MAX_LOOKBACK_DRAWS:
         if curr.weekday() not in SCHEDULE_DAYS:
             curr -= datetime.timedelta(days=1)
             continue
@@ -335,10 +355,12 @@ def scrape_50_tthue():
         d_obj = curr
         curr -= datetime.timedelta(days=1)
         checked += 1
+        scraped_recent_count += 1
 
         d_str = d_obj.strftime("%d-%m-%Y")
         db_date = d_obj.strftime("%Y-%m-%d")
 
+        # Nếu ngày này đã có trong Supabase thì bỏ qua không cào lại
         if db_date in existing:
             continue
 
@@ -359,16 +381,18 @@ def scrape_50_tthue():
                     break
 
         if parsed and save_to_supabase(parsed):
-            have += 1
             new_saved += 1
             existing.add(db_date)
-            print(f"  [{have}/{TARGET_COUNT}] Nạp thành công kỳ ngày {db_date} (nguồn: {used_path})")
+            print(f"  [{scraped_recent_count}/{TARGET_COUNT}] Nạp mới kỳ ngày {db_date} (nguồn: {used_path})")
             time.sleep(0.15)
         elif not parsed:
             print(f"  ⚠️ Không tìm thấy dữ liệu đài THỪA THIÊN HUẾ cho ngày {d_str}")
 
+    # Tự động dọn dẹp các kỳ cũ hơn 50 kỳ gần nhất
+    cleanup_old_records()
+
     final_cnt = len(get_existing_dates())
-    print(f"\n🎉 [HOÀN TẤT] Nạp mới {new_saved} kỳ | THỪA THIÊN HUẾ hiện có {final_cnt}/{TARGET_COUNT} kỳ trong Supabase")
+    print(f"\n🎉 [HOÀN TẤT] Nạp mới {new_saved} kỳ | THỪA THIÊN HUẾ hiện duy trì đúng {final_cnt}/{TARGET_COUNT} kỳ mới nhất trong Supabase!")
 
 
 if __name__ == '__main__':
