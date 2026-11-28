@@ -69,7 +69,6 @@ def parse_mb(html, db_date):
     tables = soup.find_all('table')
     box_table = None
 
-    # Định vị chính xác bảng KQXS Miền Bắc
     for t in tables:
         txt = t.get_text().upper()
         if any(k in txt for k in ['ĐẶC BIỆT', 'GĐB', 'GIẢI ĐẶC BIỆT']) and any(k in txt for k in ['GIẢI NHẤT', 'G1', 'GIẢI 1', 'GIẢI 7', 'G7', 'G.7', 'GIẢI BẢY']):
@@ -87,8 +86,6 @@ def parse_mb(html, db_date):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
             label = tds[0].get_text(separator=' ').strip().upper()
-            
-            # Bỏ qua các hàng mã ký hiệu, đầu đuôi, thống kê
             if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ DB', 'MÃ ĐẶC BIỆT', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'THỐNG KÊ']):
                 continue
 
@@ -108,7 +105,6 @@ def parse_mb(html, db_date):
 
             raw_prizes.extend(formatted_nums)
 
-    # Dự phòng: Nếu cào theo dòng thiếu giải thì quét toàn bộ số trong bảng
     if len(raw_prizes) < 27:
         all_nums = re.findall(r'\d+', box_table.get_text(separator=' '))
         valid_nums = [format_prize_number(n) for n in all_nums if 2 <= len(n) <= 6]
@@ -131,10 +127,10 @@ def parse_mb(html, db_date):
 def process_date(d_str, db_date):
     print(f"\n📌 [CÀO BÙ] Miền Bắc ngày {d_str} ({db_date})...")
     
-    # 1. Xóa bản ghi cũ nếu bị lỗi trước đó
+    # 1. Xóa bản ghi cũ bị lỗi
     delete_old_mb_record(db_date)
 
-    # 2. Thử các đường dẫn chứa kết quả ngày
+    # 2. Thử các đường dẫn chứa kết quả ngày (Bao gồm link https://www.kqxs.vn/ngay-27-11-2026)
     candidate_paths = [
         f"/mien-bac/ngay-{d_str}",
         f"/ngay-{d_str}",
@@ -155,13 +151,13 @@ def process_date(d_str, db_date):
         print(f"❌ Không tải được HTML cho ngày {d_str}")
         return False
 
-    # 3. Phân tích dữ liệu
+    # 3. Phân tích kết quả
     data = parse_mb(html, db_date)
     if not data:
         print(f"❌ Parser lỗi: Không quét đủ 27 giải Miền Bắc ngày {d_str}!")
         return False
 
-    # 4. Đóng gói đúng 4 cột của Supabase (lo_numbers lồng trong all_prizes)
+    # 4. Đóng gói payload ĐÚNG CHUẨN Supabase (lo_numbers nằm GỌN TRONG all_prizes)
     raw_prizes = data.get("raw_prizes", [])
     payload = {
         "station_id": data["station_id"],
