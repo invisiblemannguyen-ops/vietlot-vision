@@ -132,6 +132,11 @@ Vui lòng kiểm tra lại nguồn kqxs.vn hoặc log trên GitHub Actions!
 def ensure_station_exists(station_id, station_name, region):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
+    try:
+        _r = requests.get(f"{SUPABASE_URL}/rest/v1/stations?select=*&limit=3", headers=HEADERS_SUPABASE, timeout=10)
+        print(f"  [DEBUG] GET stations -> HTTP {_r.status_code}: {_r.text[:300]}")
+    except Exception as _e:
+        print(f"  [DEBUG] GET stations lỗi: {_e}")
     endpoint_get = f"{SUPABASE_URL}/rest/v1/stations?select=*"
     try:
         res = requests.get(endpoint_get, headers=HEADERS_SUPABASE, timeout=10)
@@ -384,6 +389,7 @@ def save_to_supabase(data):
         if resp.status_code in (200, 201, 204):
             print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {data['station_id']} | Ngày: {data['draw_date']} | ĐB: '{data['special_prize']}' | Số giải: {len(raw_prizes)}")
             return True
+        print(f"  ❌ [SUPABASE TRẢ LỖI] HTTP {resp.status_code}: {resp.text[:500]}")
     except Exception as e:
         print(f"  ❌ [LỖI LƯU SUPABASE] {e}")
     return False
