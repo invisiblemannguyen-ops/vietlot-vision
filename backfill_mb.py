@@ -20,7 +20,7 @@ HEADERS_SUPABASE = {
 }
 
 def format_prize_number(raw_str):
-    """Số >= 3 chữ số cắt lấy 3D. Giải 7 (2 chữ số) giữ 2D."""
+    """Số >= 3 chữ số lấy 3D. Giải 7 (2 chữ số) giữ nguyên 2D."""
     clean = re.sub(r'\D', '', str(raw_str))
     if len(clean) >= 3:
         return clean[-3:]
@@ -28,29 +28,41 @@ def format_prize_number(raw_str):
         return clean[-2:]
     return clean
 
-def fetch_html(url_path):
+def delete_old_mb_record(db_date):
+    """Xóa dữ liệu MB cũ ngày chỉ định trên Supabase trước khi cào mới."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.MB&draw_date=eq.{db_date}"
+    try:
+        res = requests.delete(endpoint, headers=HEADERS_SUPABASE, timeout=12)
+        if res.status_code in (200, 204):
+            print(f"  🧹 Đã xóa bản ghi MB cũ ngày {db_date} trên Supabase.")
+    except Exception as e:
+        print(f"  ⚠️ Lỗi khi xóa bản ghi MB ngày {db_date}: {e}")
+
+def fetch_kqxs_html(path_url):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36',
         'Accept-Language': 'vi-VN,vi;q=0.9'
     }
     for domain in ["www.kqxs.vn", "kqxs.vn"]:
-        full_url = f"https://{domain}{url_path}"
+        full_url = f"https://{domain}{path_url}"
         if cffi_requests:
             try:
-                res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=15)
+                res = cffi_requests.get(full_url, headers=headers, impersonate="chrome120", timeout=12)
                 if res.status_code == 200 and res.text:
                     return res.text
             except Exception:
                 pass
         try:
-            res = requests.get(full_url, headers=headers, timeout=15)
+            res = requests.get(full_url, headers=headers, timeout=12)
             if res.status_code == 200 and res.text:
                 return res.text
         except Exception:
             pass
     return None
 
-def parse_mb_26(html):
+def parse_mb(html, db_date):
     if not html:
         return None
     soup = BeautifulSoup(html, 'html.parser')
@@ -90,30 +102,37 @@ def parse_mb_26(html):
 
             raw_prizes.extend(formatted_nums)
 
-    if len(raw_prizes) < 27:
+    if not raw_prizes or len(raw_prizes) < 27:
         return None
 
     return {
         "station_id": "MB",
-        "draw_date": "2026-11-26",
+        "draw_date": db_date,
         "special_prize": special_prize,
         "seventh_or_eighth": g7_list,
         "raw_prizes": raw_prizes[:27]
     }
 
-def run_backfill():
-    print("🚀 [CÀO BÙ MB 26/11/2026] Bắt đầu cào dữ liệu...")
-    url_path = "/mien-bac/ngay-26-11-2026"
-    html = fetch_html(url_path)
+def process_date(d_str, db_date):
+    print(f"\n📌 [CÀO BÙ] Miền Bắc ngày {d_str} ({db_date})...")
+    
+    # 1. Xóa dữ liệu cũ
+    delete_old_mb_record(db_date)
+
+    # 2. Lấy HTML từ kqxs.vn
+    html = fetch_kqxs_html(f"/mien-bac/ngay-{d_str}")
     if not html:
-        print("❌ Không tải được HTML từ kqxs.vn")
-        return
+        print(f"❌ Không tải được HTML từ /mien-bac/ngay-{d_str}")
+        return False
 
-    data = parse_mb_26(html)
+    # 3. Phân tích kết quả
+    data = parse_mb(html, db_date)
     if not data:
-        print("❌ Lỗi parser: Không tìm thấy đủ 27 giải Miền Bắc!")
-        return
+        print(f"❌ Parser lỗi: Không quét đủ 27 giải Miền Bắc ngày {d_str}!")
+        return False
 
+    # 4. Lưu Supabase (lo_numbers nằm TRONG all_prizes)
+    raw_prizes = data.get("raw_prizes", [])
     payload = {
         "station_id": data["station_id"],
         "draw_date": data["draw_date"],
@@ -121,24 +140,37 @@ def run_backfill():
         "all_prizes": {
             "special_prize": str(data["special_prize"]).strip(),
             "seventh_or_eighth": data.get("seventh_or_eighth", []),
-            "raw_prizes": data["raw_prizes"],
-            "lo_numbers": [p[-2:] for p in data["raw_prizes"] if len(p) >= 2]
+            "raw_prizes": raw_prizes,
+            "lo_numbers": [p[-2:] for p in raw_prizes if len(p) >= 2]
         }
     }
 
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date"
     try:
-        resp = requests.post(
-            f"{SUPABASE_URL}/rest/v1/draw_results?on_conflict=station_id,draw_date",
-            json=payload,
-            headers=HEADERS_SUPABASE,
-            timeout=15
-        )
+        resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"🎉 [THÀNH CÔNG] Đã cào bù xong Miền Bắc ngày 26/11/2026! ĐB: '{data['special_prize']}' | Đủ 27 giải.")
+            print(f"  ✅ [THÀNH CÔNG] Đã lưu MB ngày {db_date}! ĐB: '{data['special_prize']}' | Đủ 27 giải.")
+            return True
         else:
-            print(f"❌ [LỖI SUPABASE] {resp.status_code}: {resp.text}")
+            print(f"  ❌ [LỖI SUPABASE] {resp.status_code}: {resp.text}")
+            return False
     except Exception as e:
-        print(f"❌ [LỖI KẾT NỐI] {e}")
+        print(f"  ❌ [LỖI KẾT NỐI] {e}")
+        return False
+
+def main():
+    print("🚀 [BẮT ĐẦU CÀO BÙ MIỀN BẮC] Cho 2 ngày 26/11/2026 & 27/11/2026")
+    dates_to_backfill = [
+        ("26-11-2026", "2026-11-26"),
+        ("27-11-2026", "2026-11-27"),
+    ]
+    
+    success_count = 0
+    for d_str, db_date in dates_to_backfill:
+        if process_date(d_str, db_date):
+            success_count += 1
+
+    print(f"\n🎉 [HOÀN TẤT CÀO BÙ] Đã xử lý xong {success_count}/{len(dates_to_backfill)} ngày Miền Bắc!")
 
 if __name__ == '__main__':
-    run_backfill()
+    main()
