@@ -132,11 +132,6 @@ Vui lòng kiểm tra lại nguồn kqxs.vn hoặc log trên GitHub Actions!
 def ensure_station_exists(station_id, station_name, region):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
-    try:
-        _r = requests.get(f"{SUPABASE_URL}/rest/v1/stations?select=*&limit=3", headers=HEADERS_SUPABASE, timeout=10)
-        print(f"  [DEBUG] GET stations -> HTTP {_r.status_code}: {_r.text[:300]}")
-    except Exception as _e:
-        print(f"  [DEBUG] GET stations lỗi: {_e}")
     endpoint_get = f"{SUPABASE_URL}/rest/v1/stations?select=*"
     try:
         res = requests.get(endpoint_get, headers=HEADERS_SUPABASE, timeout=10)
@@ -410,7 +405,7 @@ def save_to_supabase(data):
         if resp.status_code in (200, 201, 204):
             print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {data['station_id']} | Ngày: {data['draw_date']} | ĐB: '{data['special_prize']}' | Số giải: {len(raw_prizes)}")
             return True
-        print(f"  ❌ [SUPABASE TRẢ LỖI] HTTP {resp.status_code}: {resp.text[:500]}")
+        print(f"  ❌ [SUPABASE TRẢ LỖI] {data['station_id']} {data['draw_date']} | HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"  ❌ [LỖI LƯU SUPABASE] {e}")
     return False
@@ -437,58 +432,146 @@ def get_candidate_paths(st_id, cfg, d_str):
     ]
 
 
-def diagnose(html, db_date):
-    """In ra lý do parse_mb thất bại để dễ sửa."""
+# ==================== CÀO LẠI 26, 27, 28/11/2026 - TẤT CẢ ĐÀI - GHI ĐÈ ====================
+DATES = [datetime.date(2026, 11, 26), datetime.date(2026, 11, 27), datetime.date(2026, 11, 28)]
+# Giờ VN: trước giờ này trang chưa có kết quả của ngày hôm nay -> bỏ qua, không tính là lỗi
+PUBLISH_AFTER = {"MN": (16, 40), "MT": (17, 40), "MB": (18, 40)}
+
+
+def find_station_column_strict(grid, aliases):
+    """Như find_station_column nhưng KHÔNG đoán cột 1 khi bảng có 2 cột
+    (trang gộp 3 miền có bảng MB 2 cột sẽ bị nhận nhầm cho đài MN/MT)."""
+    for row in grid[:4]:
+        if len(row) <= 1:
+            continue
+        for idx in range(1, len(row)):
+            txt = norm(row[idx])
+            txt_clean = re.sub(r'^(XS|XỔ SỐ|XO SO|KQXS)\s+', '', txt)
+            if any(a in txt_clean for a in aliases):
+                return idx
+    return None
+
+
+def parse_mn_mt_multi(html, station_id, aliases, db_date):
+    """Parse đài MN/MT từ trang gộp: duyệt hết các bảng, bảng nào có đúng cột đài + đủ 18 giải thì lấy."""
+    if not html:
+        return None
     soup = BeautifulSoup(html, 'html.parser')
+    for t in soup.find_all('table'):
+        grid = expand_table(t)
+        col = find_station_column_strict(grid, aliases)
+        if col is None:
+            continue
+        prizes = collect_prizes(grid, col)
+        if any(len(prizes.get(k, [])) != cnt for k, cnt in EXPECTED_COUNT_MN_MT.items()):
+            continue
+        raw_prizes = [format_prize_number(n) for key in PRIZE_ORDER_MN_MT for n in prizes[key]]
+        return {
+            "station_id": station_id,
+            "draw_date": db_date,
+            "special_prize": format_prize_number(prizes['DB']),
+            "seventh_or_eighth": [format_prize_number(n) for n in prizes['G8']],
+            "raw_prizes": raw_prizes,
+        }
+    return None
+
+
+def page_ok(html, path_url, d_str, db_date):
+    """Trang phải đúng ngày: heading có ngày, hoặc URL dạng /ngay-DD-MM-YYYY và trang có ghi ngày đó."""
+    if not html:
+        return False
+    if date_in_html_mb(html, db_date):
+        return True
     y, m, d = db_date.split('-')
-    heads = [t.get_text(' ', strip=True) for t in soup.find_all(['title', 'h1', 'h2', 'h3'])]
-    has_date = any(f"{d}/{m}/{y}" in h or f"{d}-{m}-{y}" in h for h in heads)
-    print(f"      · độ dài HTML: {len(html)} | số bảng: {len(soup.find_all('table'))} | ngày {d}/{m}/{y} trong heading/title: {has_date}")
-    print(f"      · title: {heads[0][:90] if heads else '(không có)'}")
-    for i, t in enumerate(soup.find_all('table')):
-        p = collect_prizes_mb(t)
-        if p:
-            print(f"      · bảng #{i}: " + ", ".join(f"{k}={len(v)}" for k, v in p.items()))
+    return "/ngay-" in path_url and (d_str in html or f"{d}/{m}/{y}" in html)
 
 
-def test_mb(dates, save=True):
-    ok_all = True
+def parse_station_for_date(st_id, cfg, d_str, db_date, cache):
+    aliases = cfg["aliases"]
+    gop = f"/ngay-{d_str}"                       # trang gộp 3 miền
+    paths = get_candidate_paths(st_id, cfg, d_str)   # MB: trang gộp đứng đầu; MN/MT: URL riêng từng đài như daily
+    if st_id != "MB":
+        paths.insert(2, gop)
+    for path_url in paths:
+        if path_url not in cache:
+            cache[path_url] = fetch_kqxs_html(path_url)
+        html = cache[path_url]
+        if not page_ok(html, path_url, d_str, db_date):
+            continue
+        if st_id != "MB" and path_url == gop:
+            parsed = parse_mn_mt_multi(html, st_id, aliases, db_date)
+        else:
+            parsed = parse_station_html(html, st_id, aliases, db_date)
+        if parsed:
+            return parsed, path_url
+    return None, ""
+
+
+def count_draws(station_id):
+    endpoint = f"{SUPABASE_URL}/rest/v1/draw_results?station_id=eq.{station_id}&select=draw_date&limit=1000"
+    try:
+        res = requests.get(endpoint, headers=HEADERS_SUPABASE, timeout=10)
+        if res.status_code == 200:
+            return len(res.json())
+    except Exception:
+        pass
+    return None
+
+
+def rescrape(dates):
+    vn_tz = datetime.timezone(datetime.timedelta(hours=7))
+    now = datetime.datetime.now(vn_tz)
+    ensured = set()
+    ok, skipped, failed = [], [], []
+
     for day in dates:
         d_str = day.strftime("%d-%m-%Y")
         db_date = day.strftime("%Y-%m-%d")
-        print(f"\n==================== MB ngày {d_str} ====================")
-        parsed, used = None, ""
-        for path_url in get_candidate_paths("MB", STATION_DB["MB"], d_str):
-            html = fetch_kqxs_html(path_url)
-            if not html:
-                print(f"  ✗ {path_url} -> không tải được")
+        weekday = day.weekday()
+        stations = [(i, c) for i, c in STATION_DB.items() if weekday in c["days"]]
+        cache = {}
+        print(f"\n==================== NGÀY {d_str} ({len(stations)} đài theo lịch) ====================")
+
+        for st_id, cfg in stations:
+            tag = f"{st_id} {db_date}"
+            if day == now.date() and (now.hour, now.minute) < PUBLISH_AFTER[cfg["region"]]:
+                print(f"  ⏭️  {tag}: chưa tới giờ công bố, bỏ qua")
+                skipped.append(tag)
                 continue
-            parsed = parse_station_html(html, "MB", STATION_DB["MB"]["aliases"], db_date)
-            if parsed:
-                used = path_url
-                print(f"  ✓ {path_url} -> parse OK")
-                break
-            print(f"  ✗ {path_url} -> tải được nhưng parse thất bại")
-            diagnose(html, db_date)
-        if not parsed:
-            ok_all = False
-            print(f"  💥 Không lấy được MB ngày {d_str}")
-            continue
-        print(f"  ĐB: {parsed['special_prize']} | G7: {parsed['seventh_or_eighth']} | Tổng số giải: {len(parsed['raw_prizes'])}")
-        print(f"  raw_prizes: {parsed['raw_prizes']}")
-        if save:
-            ensure_station_exists("MB", "Miền Bắc", "MB")
-            if not save_to_supabase(parsed):
-                ok_all = False
-                print("  ❌ Ghi Supabase thất bại")
-        else:
-            print("  (bỏ qua ghi Supabase)")
-    return ok_all
+            parsed, used = parse_station_for_date(st_id, cfg, d_str, db_date, cache)
+            if not parsed:
+                print(f"  ❌ {tag}: không cào được")
+                failed.append(tag)
+                continue
+            if st_id not in ensured:
+                ensure_station_exists(st_id, cfg["name"], cfg["region"])
+                ensured.add(st_id)
+            if save_to_supabase(parsed):
+                print(f"     (nguồn: {used})")
+                ok.append(tag)
+            else:
+                failed.append(tag)
+
+    print("\n==================== KIỂM TRA 50 KỲ CUỐN CHIẾU ====================")
+    short = []
+    for st_id in STATION_DB:
+        cleanup_old_records(st_id)          # chỉ giữ 50 kỳ mới nhất mỗi đài
+        n = count_draws(st_id)
+        flag = "" if (n is not None and n >= TARGET_COUNT) else "  ⚠️ CHƯA ĐỦ 50"
+        print(f"  {st_id:<10} {n if n is not None else '?'} kỳ{flag}")
+        if flag:
+            short.append(f"{st_id}={n}")
+
+    print(f"\n📊 TỔNG KẾT: ghi đè OK {len(ok)} | bỏ qua {len(skipped)} | LỖI {len(failed)}")
+    if failed:
+        print("💥 Đài lỗi: " + ", ".join(failed))
+    if short:
+        print("⚠️ Đài chưa đủ 50 kỳ (script này không nạp bù kỳ cũ): " + ", ".join(short))
+    return not failed
 
 
 if __name__ == '__main__':
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ Thiếu SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY trong biến môi trường.")
         sys.exit(1)
-    days = [datetime.date(2026, 11, 26), datetime.date(2026, 11, 27)]
-    sys.exit(0 if test_mb(days, save=True) else 1)
+    sys.exit(0 if rescrape(DATES) else 1)
