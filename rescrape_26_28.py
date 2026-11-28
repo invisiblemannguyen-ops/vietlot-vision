@@ -33,7 +33,7 @@ HEADERS_SUPABASE = {
 # ==================== 2. LỊCH QUAY THƯỜNG CÁC ĐÀI (T2 -> CN) ====================
 STATION_DB = {
     # MIỀN NAM (18 GIẢI / ĐÀI)
-    "TPHCM":     {"name": "TP.HCM", "region": "MN", "days": (0, 5), "aliases": ["TP.HCM", "TPHCM", "HỒ CHÍ MINH"], "path": "xo-so-tphcm"},
+    "TPHCM":     {"name": "TP.HCM", "region": "MN", "days": (0, 5), "aliases": ["TP.HCM", "TP. HCM", "TP HCM", "TPHCM", "HỒ CHÍ MINH", "HO CHI MINH"], "path": "xo-so-ho-chi-minh"},
     "DONGTHAP":  {"name": "Đồng Tháp", "region": "MN", "days": (0,), "aliases": ["ĐỒNG THÁP", "DONGTHAP"], "path": "xo-so-dong-thap"},
     "CAMAU":     {"name": "Cà Mau", "region": "MN", "days": (0,), "aliases": ["CÀ MAU", "CAMAU"], "path": "xo-so-ca-mau"},
     "BENTRE":    {"name": "Bến Tre", "region": "MN", "days": (1,), "aliases": ["BẾN TRE", "BENTRE"], "path": "xo-so-ben-tre"},
