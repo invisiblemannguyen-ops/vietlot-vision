@@ -82,7 +82,7 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds[0].get_text(separator=' ').strip().upper()
+            label = tds.get_text(separator=' ').strip().upper()
             if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO']):
                 continue
 
@@ -131,7 +131,7 @@ def process_date(d_str, db_date):
         print(f"❌ Parser lỗi: Không quét đủ 27 giải Miền Bắc ngày {d_str}!")
         return False
 
-    # 4. Lưu Supabase (lo_numbers nằm TRONG all_prizes)
+    # 4. Lưu Supabase (lo_numbers nằm NẰM GỌN TRONG all_prizes)
     raw_prizes = data.get("raw_prizes", [])
     payload = {
         "station_id": data["station_id"],
