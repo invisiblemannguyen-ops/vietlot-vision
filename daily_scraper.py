@@ -33,7 +33,7 @@ HEADERS_SUPABASE = {
 # ==================== 2. LỊCH QUAY THƯỜNG CÁC ĐÀI (T2 -> CN) ====================
 STATION_DB = {
     # MIỀN NAM (18 GIẢI / ĐÀI)
-    "TPHCM":     {"name": "TP.HCM", "region": "MN", "days": (0, 5), "aliases": ["TP.HCM", "TPHCM", "HỒ CHÍ MINH"], "path": "xo-so-tphcm"},
+    "TPHCM":     {"name": "TP.HCM", "region": "MN", "days": (0, 5), "aliases": ["TP.HCM", "TP. HCM", "TP HCM", "TPHCM", "HỒ CHÍ MINH", "HO CHI MINH"], "path": "xo-so-ho-chi-minh"},
     "DONGTHAP":  {"name": "Đồng Tháp", "region": "MN", "days": (0,), "aliases": ["ĐỒNG THÁP", "DONGTHAP"], "path": "xo-so-dong-thap"},
     "CAMAU":     {"name": "Cà Mau", "region": "MN", "days": (0,), "aliases": ["CÀ MAU", "CAMAU"], "path": "xo-so-ca-mau"},
     "BENTRE":    {"name": "Bến Tre", "region": "MN", "days": (1,), "aliases": ["BẾN TRE", "BENTRE"], "path": "xo-so-ben-tre"},
@@ -285,56 +285,74 @@ def collect_prizes(grid, col=1):
 
 
 # ==================== PARSER CHUYÊN DỤNG CHO MIỀN BẮC (27 GIẢI - KHÔNG GIẢI 8) ====================
-def parse_mb(html, db_date):
-    if not html:
-        return None
+# Cấu trúc giống init_50_draws: date_in_html -> collect_prizes -> build_result -> parse
+EXPECTED_COUNT_MB = {'DB': 1, 'G1': 1, 'G2': 2, 'G3': 6, 'G4': 4, 'G5': 6, 'G6': 3, 'G7': 4}
+EXPECTED_LEN_MB = {'DB': 5, 'G1': 5, 'G2': 5, 'G3': 5, 'G4': 4, 'G5': 4, 'G6': 3, 'G7': 2}
+PRIZE_ORDER_MB = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']
+
+
+def date_in_html_mb(html, db_date):
+    """Chống lưu nhầm ngày: title/heading của trang phải chứa đúng ngày đang cần."""
+    y, m, d = db_date.split('-')
     soup = BeautifulSoup(html, 'html.parser')
-    tables = soup.find_all('table')
-    box_table = None
-    for t in tables:
-        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1', re.I)):
-            box_table = t
-            break
-    if not box_table:
-        return None
+    head = ' '.join(t.get_text(' ') for t in soup.find_all(['title', 'h1', 'h2', 'h3']))
+    return (f"{d}-{m}-{y}" in head) or (f"{d}/{m}/{y}" in head)
 
+
+def collect_prizes_mb(rows):
+    """Gom số theo từng giải. Dòng tiếp nối (ô nhãn trống) thuộc giải ngay trước nó."""
+    prizes = {}
+    current = None
+    for r in rows:
+        tds = r.find_all(['td', 'th'])
+        if len(tds) < 2:
+            continue
+        label = norm(tds[0].get_text(' '))
+        if label:
+            if any(k in label for k in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'KÝ HIỆU', 'THỐNG KÊ']):
+                current = None
+                continue
+            key = classify_label(label)
+            if key is None or key not in EXPECTED_COUNT_MB:
+                current = None
+                continue
+            current = key
+        elif current is None:
+            continue
+        key = current
+
+        for cell in tds[1:]:
+            for n in re.findall(r'\d+', cell.get_text(' ')):
+                if len(n) == EXPECTED_LEN_MB[key]:
+                    prizes.setdefault(key, []).append(n)
+    return prizes
+
+
+def build_result_mb(prizes, db_date):
+    for key, cnt in EXPECTED_COUNT_MB.items():
+        if len(prizes.get(key, [])) != cnt:
+            return None
     raw_prizes = []
-    special_prize = ""
-    g7_list = []
-
-    for tr in box_table.find_all('tr'):
-        tds = tr.find_all(['td', 'th'])
-        if len(tds) >= 2:
-            label = tds[0].get_text(separator=' ').strip().upper()
-            if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO']):
-                continue
-
-            nums_raw = []
-            for td in tds[1:]:
-                nums_raw.extend(re.findall(r'\d+', td.get_text(separator=' ')))
-
-            formatted_nums = [format_prize_number(n) for n in nums_raw if len(n) >= 2]
-            if not formatted_nums:
-                continue
-
-            if re.search(r'ĐB|ĐẶC BIỆT', label):
-                if formatted_nums:
-                    special_prize = formatted_nums[0]
-            elif re.search(r'G7|GIẢI 7', label):
-                g7_list.extend(formatted_nums)
-
-            raw_prizes.extend(formatted_nums)
-
-    if not raw_prizes or len(raw_prizes) < 27:
-        return None
-
+    for key in PRIZE_ORDER_MB:
+        raw_prizes.extend(format_prize_number(n) for n in prizes[key])
     return {
         "station_id": "MB",
         "draw_date": db_date,
-        "special_prize": special_prize,
-        "seventh_or_eighth": g7_list,
-        "raw_prizes": raw_prizes[:27]
+        "special_prize": format_prize_number(prizes['DB'][0]),
+        "seventh_or_eighth": [format_prize_number(n) for n in prizes['G7']],
+        "raw_prizes": raw_prizes,
     }
+
+
+def parse_mb(html, db_date):
+    if not html or not date_in_html_mb(html, db_date):
+        return None
+    soup = BeautifulSoup(html, 'html.parser')
+    for t in soup.find_all('table'):
+        result = build_result_mb(collect_prizes_mb(t.find_all('tr')), db_date)
+        if result:
+            return result
+    return None
 
 
 # ==================== PARSER CHO MIỀN NAM VÀ MIỀN TRUNG (18 GIẢI) ====================
@@ -387,6 +405,7 @@ def save_to_supabase(data):
         if resp.status_code in (200, 201, 204):
             print(f"  ✅ [LƯU THÀNH CÔNG] Đài: {data['station_id']} | Ngày: {data['draw_date']} | ĐB: '{data['special_prize']}' | Số giải: {len(raw_prizes)}")
             return True
+        print(f"  ❌ [SUPABASE TRẢ LỖI] {data['station_id']} {data['draw_date']} | HTTP {resp.status_code}: {resp.text[:300]}")
     except Exception as e:
         print(f"  ❌ [LỖI LƯU SUPABASE] {e}")
     return False
@@ -397,6 +416,7 @@ def get_candidate_paths(st_id, cfg, d_str):
     path_slug = cfg["path"]
     if st_id == "MB":
         return [
+            f"/ngay-{d_str}",
             f"/mien-bac/ngay-{d_str}",
             f"/xo-so-mien-bac/ngay-{d_str}",
             f"/mien-bac?date={d_str}",
