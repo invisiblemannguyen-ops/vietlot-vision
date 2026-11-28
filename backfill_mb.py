@@ -68,10 +68,14 @@ def parse_mb(html, db_date):
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
     box_table = None
+
+    # Định vị chính xác bảng KQXS Miền Bắc
     for t in tables:
-        if t.find(string=re.compile(r'Đặc biệt|GĐB|Giải 1|G1', re.I)):
+        txt = t.get_text().upper()
+        if any(k in txt for k in ['ĐẶC BIỆT', 'GĐB', 'GIẢI ĐẶC BIỆT']) and any(k in txt for k in ['GIẢI NHẤT', 'G1', 'GIẢI 1', 'GIẢI 7', 'G7', 'G.7', 'GIẢI BẢY']):
             box_table = t
             break
+
     if not box_table:
         return None
 
@@ -82,8 +86,10 @@ def parse_mb(html, db_date):
     for tr in box_table.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
-            label = tds.get_text(separator=' ').strip().upper()
-            if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO']):
+            label = tds[0].get_text(separator=' ').strip().upper()
+            
+            # Bỏ qua các hàng mã ký hiệu, đầu đuôi, thống kê
+            if any(k in label for k in ['KÝ HIỆU', 'MÃ ĐB', 'MÃ DB', 'MÃ ĐẶC BIỆT', 'MÃ', 'ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'THỐNG KÊ']):
                 continue
 
             nums_raw = []
@@ -97,10 +103,19 @@ def parse_mb(html, db_date):
             if re.search(r'ĐB|ĐẶC BIỆT', label):
                 if formatted_nums:
                     special_prize = formatted_nums[0]
-            elif re.search(r'G7|GIẢI 7', label):
+            elif re.search(r'G7|GIẢI 7|G\.7|GIẢI BẢY|BẢY', label):
                 g7_list.extend(formatted_nums)
 
             raw_prizes.extend(formatted_nums)
+
+    # Dự phòng: Nếu cào theo dòng thiếu giải thì quét toàn bộ số trong bảng
+    if len(raw_prizes) < 27:
+        all_nums = re.findall(r'\d+', box_table.get_text(separator=' '))
+        valid_nums = [format_prize_number(n) for n in all_nums if 2 <= len(n) <= 6]
+        if len(valid_nums) >= 27:
+            raw_prizes = valid_nums[:27]
+            special_prize = raw_prizes[0]
+            g7_list = raw_prizes[-4:]
 
     if not raw_prizes or len(raw_prizes) < 27:
         return None
@@ -116,22 +131,37 @@ def parse_mb(html, db_date):
 def process_date(d_str, db_date):
     print(f"\n📌 [CÀO BÙ] Miền Bắc ngày {d_str} ({db_date})...")
     
-    # 1. Xóa dữ liệu cũ
+    # 1. Xóa bản ghi cũ nếu bị lỗi trước đó
     delete_old_mb_record(db_date)
 
-    # 2. Lấy HTML từ kqxs.vn
-    html = fetch_kqxs_html(f"/mien-bac/ngay-{d_str}")
+    # 2. Thử các đường dẫn chứa kết quả ngày
+    candidate_paths = [
+        f"/mien-bac/ngay-{d_str}",
+        f"/ngay-{d_str}",
+        f"/xo-so-mien-bac/ngay-{d_str}",
+        f"/mien-bac?date={d_str}",
+        f"/mien-bac"
+    ]
+
+    html = None
+    used_path = ""
+    for path_url in candidate_paths:
+        html = fetch_kqxs_html(path_url)
+        if html:
+            used_path = path_url
+            break
+
     if not html:
-        print(f"❌ Không tải được HTML từ /mien-bac/ngay-{d_str}")
+        print(f"❌ Không tải được HTML cho ngày {d_str}")
         return False
 
-    # 3. Phân tích kết quả
+    # 3. Phân tích dữ liệu
     data = parse_mb(html, db_date)
     if not data:
         print(f"❌ Parser lỗi: Không quét đủ 27 giải Miền Bắc ngày {d_str}!")
         return False
 
-    # 4. Lưu Supabase (lo_numbers nằm NẰM GỌN TRONG all_prizes)
+    # 4. Đóng gói đúng 4 cột của Supabase (lo_numbers lồng trong all_prizes)
     raw_prizes = data.get("raw_prizes", [])
     payload = {
         "station_id": data["station_id"],
@@ -149,7 +179,7 @@ def process_date(d_str, db_date):
     try:
         resp = requests.post(endpoint, json=payload, headers=HEADERS_SUPABASE, timeout=12)
         if resp.status_code in (200, 201, 204):
-            print(f"  ✅ [THÀNH CÔNG] Đã lưu MB ngày {db_date}! ĐB: '{data['special_prize']}' | Đủ 27 giải.")
+            print(f"  ✅ [THÀNH CÔNG] Đã lưu MB ngày {db_date}! URL: {used_path} | ĐB: '{data['special_prize']}' | Đủ 27 giải.")
             return True
         else:
             print(f"  ❌ [LỖI SUPABASE] {resp.status_code}: {resp.text}")
