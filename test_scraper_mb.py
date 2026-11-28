@@ -290,52 +290,73 @@ def collect_prizes(grid, col=1):
 
 
 # ==================== PARSER CHUYÊN DỤNG CHO MIỀN BẮC (27 GIẢI - KHÔNG GIẢI 8) ====================
+# Cấu trúc giống init_50_draws: date_in_html -> collect_prizes -> build_result -> parse
 EXPECTED_COUNT_MB = {'DB': 1, 'G1': 1, 'G2': 2, 'G3': 6, 'G4': 4, 'G5': 6, 'G6': 3, 'G7': 4}
-EXPECTED_LEN_MB = {'DB': (5,), 'G1': (5,), 'G2': (5,), 'G3': (5,), 'G4': (4,), 'G5': (4,), 'G6': (3,), 'G7': (2,)}
+EXPECTED_LEN_MB = {'DB': 5, 'G1': 5, 'G2': 5, 'G3': 5, 'G4': 4, 'G5': 4, 'G6': 3, 'G7': 2}
 PRIZE_ORDER_MB = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']
 
 
-def collect_prizes_mb(table):
+def date_in_html_mb(html, db_date):
+    """Chống lưu nhầm ngày: title/heading của trang phải chứa đúng ngày đang cần."""
+    y, m, d = db_date.split('-')
+    soup = BeautifulSoup(html, 'html.parser')
+    head = ' '.join(t.get_text(' ') for t in soup.find_all(['title', 'h1', 'h2', 'h3']))
+    return (f"{d}-{m}-{y}" in head) or (f"{d}/{m}/{y}" in head)
+
+
+def collect_prizes_mb(rows):
+    """Gom số theo từng giải. Dòng tiếp nối (ô nhãn trống) thuộc giải ngay trước nó."""
     prizes = {}
-    for tr in table.find_all('tr'):
-        cells = tr.find_all(['td', 'th'])
-        if len(cells) < 2:
+    current = None
+    for r in rows:
+        tds = r.find_all(['td', 'th'])
+        if len(tds) < 2:
             continue
-        label = norm(cells[0].get_text(separator=' '))
-        if any(k in label for k in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'KÝ HIỆU', 'THỐNG KÊ']):
+        label = norm(tds[0].get_text(' '))
+        if label:
+            if any(k in label for k in ['ĐẦU', 'ĐUÔI', 'LÔ', 'LOTO', 'MÃ', 'KÝ HIỆU', 'THỐNG KÊ']):
+                current = None
+                continue
+            key = classify_label(label)
+            if key is None or key not in EXPECTED_COUNT_MB:
+                current = None
+                continue
+            current = key
+        elif current is None:
             continue
-        key = classify_label(label)
-        if key not in EXPECTED_COUNT_MB:
-            continue
-        for td in cells[1:]:
-            for n in re.findall(r'\d+', td.get_text(separator=' ')):
-                if len(n) in EXPECTED_LEN_MB[key]:
+        key = current
+
+        for cell in tds[1:]:
+            for n in re.findall(r'\d+', cell.get_text(' ')):
+                if len(n) == EXPECTED_LEN_MB[key]:
                     prizes.setdefault(key, []).append(n)
     return prizes
 
 
+def build_result_mb(prizes, db_date):
+    for key, cnt in EXPECTED_COUNT_MB.items():
+        if len(prizes.get(key, [])) != cnt:
+            return None
+    raw_prizes = []
+    for key in PRIZE_ORDER_MB:
+        raw_prizes.extend(format_prize_number(n) for n in prizes[key])
+    return {
+        "station_id": "MB",
+        "draw_date": db_date,
+        "special_prize": format_prize_number(prizes['DB'][0]),
+        "seventh_or_eighth": [format_prize_number(n) for n in prizes['G7']],
+        "raw_prizes": raw_prizes,
+    }
+
+
 def parse_mb(html, db_date):
-    if not html:
+    if not html or not date_in_html_mb(html, db_date):
         return None
     soup = BeautifulSoup(html, 'html.parser')
-
-    # Chống lưu nhầm kết quả hôm qua (khi trang /mien-bac chưa cập nhật kỳ mới)
-    y, m, d = db_date.split('-')
-    head_text = ' '.join(t.get_text(separator=' ') for t in soup.find_all(['title', 'h1', 'h2', 'h3']))
-    if f"{d}/{m}/{y}" not in head_text and f"{d}-{m}-{y}" not in head_text:
-        return None
-
     for t in soup.find_all('table'):
-        prizes = collect_prizes_mb(t)
-        if all(len(prizes.get(key, [])) == cnt for key, cnt in EXPECTED_COUNT_MB.items()):
-            raw_prizes = [format_prize_number(n) for key in PRIZE_ORDER_MB for n in prizes[key]]
-            return {
-                "station_id": "MB",
-                "draw_date": db_date,
-                "special_prize": format_prize_number(prizes['DB']),
-                "seventh_or_eighth": [format_prize_number(n) for n in prizes['G7']],
-                "raw_prizes": raw_prizes,
-            }
+        result = build_result_mb(collect_prizes_mb(t.find_all('tr')), db_date)
+        if result:
+            return result
     return None
 
 
