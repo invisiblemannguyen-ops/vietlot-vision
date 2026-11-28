@@ -1,12 +1,12 @@
-name: Test cào Miền Bắc 26-27/11/2026
+name: Cào lại 26-27-28/11/2026 (tất cả đài, ghi đè)
 
 on:
   workflow_dispatch:
 
 jobs:
-  scrape-mb:
+  rescrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -17,8 +17,8 @@ jobs:
       - name: Cài thư viện
         run: pip install requests beautifulsoup4 curl_cffi
 
-      - name: Cào MB ngày 26 và 27/11/2026 và ghi Supabase
+      - name: Cào lại 3 ngày, ghi đè Supabase, kiểm tra 50 kỳ
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python test_scraper_mb.py
+        run: python rescrape_26_28.py
